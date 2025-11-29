@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AWS 비용 정산 툴</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #F5F6FA;
+            min-height: 100vh;
+            padding: 15px;
+            font-size: 13px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 15px 45px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: #cbd5e0;
+            color: #2d3748;
+            padding: 20px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 1.5em;
+            margin-bottom: 8px;
+        }
+        
+        .header p {
+            font-size: 0.95em;
+            opacity: 0.9;
+        }
+        
+        .content {
+            padding: 20px;
+        }
+        
+        .section {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+        
+        .section-title {
+            font-size: 1.15em;
+            color: #2c3e50;
+            margin-bottom: 12px;
+            border-bottom: 2px solid #2c3e50;
+            padding-bottom: 8px;
+        }
+        
+        .upload-area {
+            border: 2px dashed #6c757d;
+            border-radius: 8px;
+            padding: 30px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .upload-area:hover {
+            background: #e9ecef;
+            border-color: #495057;
+        }
+        
+        .upload-area.dragover {
+            background: #dee2e6;
+            border-color: #343a40;
+        }
+        
+        .btn {
+            padding: 8px 20px;
+            border: none;
+            border-radius: 20px;
+            font-size: 0.9em;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: 600;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #495057 0%, #343a40 100%);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(52, 58, 64, 0.4);
+        }
+        
+        .btn-success {
+            background: #495057;
+            color: white;
+        }
+        
+        .btn-success:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(73, 80, 87, 0.4);
+        }
+        
+        .btn-info {
+            background: #495057;
+            color: white;
+        }
+        
+        .btn-info:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(73, 80, 87, 0.4);
+        }
+        
+        input[type="number"],
+        input[type="date"],
+        input[type="text"] {
+            padding: 8px 12px;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            font-size: 0.9em;
+            width: 100%;
+            max-width: 280px;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        input[type="number"]:focus,
+        input[type="date"]:focus,
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #495057;
+        }
+        
+        .form-group {
+            margin-bottom: 12px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 4px;
+            font-weight: 600;
+            color: #333;
+            font-size: 0.9em;
+        }
+        
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-top: 15px;
+        }
+        
+        .summary-card {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            min-height: 100px;
+        }
+        
+        .summary-card h3 {
+            color: #495057;
+            font-size: 0.85em;
+            margin-bottom: 8px;
+        }
+        
+        .summary-card .value {
+            font-size: 1.3em;
+            font-weight: bold;
+            color: #212529;
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            font-size: 0.85em;
+        }
+        
+        th {
+            background: #E9ECEF;
+            color: #2d3748;
+            padding: 10px;
+            text-align: left;
+            font-weight: 600;
+        }
+        
+        td {
+            padding: 8px 10px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        tr:hover {
+            background: #f8f9fa;
+        }
+        
+        .filter-bar {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 15px;
+        }
+        
+        select {
+            padding: 8px 12px;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            font-size: 0.9em;
+            cursor: pointer;
+        }
+        
+        .chart-container {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+            width: 100%;
+            max-width: 800px;
+            height: 120px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        
+        .alert {
+            padding: 12px 15px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+            font-size: 0.9em;
+        }
+        
+        .alert-info {
+            background: #d1ecf1;
+            border-left: 4px solid #0c5460;
+            color: #0c5460;
+        }
+        
+        .alert-success {
+            background: #d4edda;
+            border-left: 4px solid #155724;
+            color: #155724;
+        }
+        
+        .alert-error {
+            background: #f8d7da;
+            border-left: 4px solid #721c24;
+            color: #721c24;
+        }
+        
+        .hidden {
+            display: none;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 30px;
+        }
+        
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #495057;
+            border-radius: 50%;
+            width: 35px;
+            height: 35px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .pagination {
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            margin-top: 15px;
+        }
+        
+        .pagination button {
+            padding: 6px 12px;
+            border: 1px solid #6c757d;
+            background: white;
+            color: #495057;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85em;
+        }
+        
+        .pagination button.active {
+            background: #495057;
+            color: white;
+        }
+        
+        .pagination button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .service-header:hover {
+            background: #a3b1c2 !important;
+        }
+        
+        .service-details {
+            transition: all 0.3s ease;
+        }
+        
+        th[data-sort] {
+            position: relative;
+            padding-right: 25px;
+        }
+        
+        th[data-sort]:hover {
+            background: #d1d5db !important;
+        }
+        
+        .sort-icon {
+            font-size: 0.8em;
+            margin-left: 5px;
+            transition: opacity 0.2s;
+        }
+        
+        html {
+            scroll-behavior: smooth;
+        }
+        
+        .section {
+            scroll-margin-top: 20px;
+        }
+        
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .slide-in {
+            animation: slideIn 0.5s ease-out;
+        }
+        
+        /* 드롭다운 체크박스 스타일 */
+        .dropdown-check {
+            position: relative;
+            display: inline-block;
+        }
+        
+        .dropdown-check-btn {
+            height: 34px;
+            padding: 6px 12px;
+            width: 180px;
+            background: white;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.9em;
+            color: #495057;
+        }
+        
+        .dropdown-check-btn:hover {
+            border-color: #4299e1;
+        }
+        
+        .dropdown-check-content {
+            display: none;
+            position: absolute;
+            background: white;
+            width: 180px;
+            max-height: 250px;
+            overflow-y: auto;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            border-radius: 6px;
+            z-index: 100;
+            border: 1px solid #e2e8f0;
+            margin-top: 2px;
+        }
+        
+        .dropdown-check-content.show {
+            display: block;
+        }
+        
+        .dropdown-check-content label {
+            display: flex;
+            align-items: center;
+            padding: 8px 12px;
+            cursor: pointer;
+            font-size: 0.9em;
+            color: #495057;
+            gap: 8px;
+        }
+        
+        .dropdown-check-content label:hover {
+            background: #f7fafc;
+        }
+        
+        .dropdown-check-content input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+        }
+        
+        .dropdown-check-header {
+            padding: 8px 12px;
+            border-bottom: 1px solid #e2e8f0;
+            display: flex;
+            justify-content: space-between;
+            background: #f8f9fa;
+        }
+        
+        .dropdown-check-header button {
+            background: none;
+            border: none;
+            color: #4299e1;
+            cursor: pointer;
+            font-size: 0.85em;
+            padding: 2px 6px;
+        }
+        
+        .dropdown-check-header button:hover {
+            text-decoration: underline;
+        }
+        
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>☁️ AWS 비용 정산 툴</h1>
+            <p>클라우드체커 CSV 파일을 업로드하여 비용을 분석하고 정산하세요</p>
+        </div>
+        
+        <div class="content">
+            <!-- 1. 파일 업로드 섹션 -->
+            <div class="section">
+                <h2 class="section-title">📁 1단계: CSV 파일 업로드</h2>
+                <div class="upload-area" id="uploadArea">
+                    <p style="font-size: 2.5em; margin-bottom: 8px;">📄</p>
+                    <p style="font-size: 1em; margin-bottom: 8px;">클라우드체커 CSV 파일을 드래그하거나 클릭하세요 (여러 파일 선택 가능)</p>
+                    <input type="file" id="fileInput" accept=".csv" multiple style="display: none;">
+                    <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">
+                        파일 선택
+                    </button>
+                </div>
+                <div id="uploadStatus" class="hidden" style="margin-top: 15px;"></div>
+            </div>
+            
+            <!-- 2. 환율 설정 섹션 -->
+            <div class="section hidden" id="exchangeSection">
+                <h2 class="section-title">💱 2단계: 환율 설정</h2>
+                <p style="color: #6c757d; margin-bottom: 15px; font-size: 11.7px;">한국수출입은행 API로 자동 조회하거나, 직접 환율을 입력할 수 있습니다.</p>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                    <!-- API 자동 조회 -->
+                    <div style="background: #e9ecef; padding: 15px; border-radius: 8px;">
+                        <h3 style="color: #495057; margin-bottom: 12px; font-size: 1em;">🔄 API 자동 조회 <span style="font-size: 11.7px; font-weight: normal; color: #6c757d;">(한국수출입은행 기준)</span></h3>
+                        <div style="background: white; padding: 12px; border-radius: 6px; border: 2px solid #6c757d; min-height: 130px; display: flex; flex-direction: column; justify-content: space-between;">
+                            <div class="form-group">
+                                <label>조회 날짜</label>
+                                <input type="date" id="apiDate" value="">
+                            </div>
+                            <button class="btn btn-info" onclick="fetchExchangeRateAPI()" style="background: #6c757d; width: 100%;">🌐 환율 가져오기</button>
+                        </div>
+                    </div>
+                    
+                    <!-- 수동 입력 -->
+                    <div style="background: #e9ecef; padding: 15px; border-radius: 8px;">
+                        <h3 style="color: #495057; margin-bottom: 12px; font-size: 1em;">✏️ 수동 입력</h3>
+                        <div style="background: white; padding: 12px; border-radius: 6px; border: 2px solid #6c757d; min-height: 130px; display: flex; flex-direction: column; justify-content: space-between;">
+                            <div class="form-group">
+                                <label>환율 (1 USD = ? KRW)</label>
+                                <input type="number" id="exchangeRate" placeholder="1320.50" step="0.01" value="1320.50">
+                            </div>
+                            <button class="btn btn-success" onclick="setExchangeRate()" style="width: 100%;">환율 적용</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 3. 요약 정보 -->
+            <div class="section hidden" id="summarySection">
+                <h2 class="section-title">📊 비용 요약 <span id="exchangeRateInfo" style="font-size: 11.7px; font-weight: normal; color: #6c757d; margin-left: 10px;"></span></h2>
+                <div class="summary-grid" id="summaryGrid"></div>
+            </div>
+            
+            <!-- 4. 서비스별 차트 -->
+            <div class="section hidden" id="chartSection">
+                <h2 class="section-title">📈 서비스별 비용</h2>
+                <div class="chart-container">
+                    <canvas id="serviceChart"></canvas>
+                </div>
+            </div>
+            
+            <!-- 5. 일별 비용 추이 -->
+            <div class="section hidden" id="dailyTrendSection">
+                <h2 class="section-title">📊 일별 비용 추이</h2>
+                <div style="margin-bottom: 15px;">
+                    <select id="dailyTrendEnvFilter" onchange="updateDailyTrendChart()" style="padding: 6px 12px; border: 2px solid #ddd; border-radius: 6px; font-size: 0.9em; min-width: 150px;">
+                        <option value="">전체 환경</option>
+                    </select>
+                </div>
+                <div class="chart-container" style="height: 300px;">
+                    <canvas id="dailyTrendChart"></canvas>
+                </div>
+            </div>
+            
+            <!-- 6. 데이터 테이블 -->
+            <div class="section hidden" id="dataSection">
+                <h2 class="section-title">📋 상세 데이터</h2>
+                
+                <div class="filter-bar" style="align-items: center;">
+                    <!-- 서비스 드롭다운 체크박스 -->
+                    <div class="dropdown-check" id="serviceDropdown">
+                        <div class="dropdown-check-btn" onclick="toggleServiceDropdown()">
+                            <span id="serviceDropdownText">전체 서비스</span>
+                            <span>▼</span>
+                        </div>
+                        <div class="dropdown-check-content" id="serviceDropdownContent">
+                            <div class="dropdown-check-header">
+                                <button onclick="selectAllServices()">전체 선택</button>
+                                <button onclick="deselectAllServices()">전체 해제</button>
+                            </div>
+                            <div id="serviceCheckboxList"></div>
+                        </div>
+                    </div>
+                    <!-- 환경 드롭다운 -->
+                    <div class="dropdown-check" id="environmentDropdown">
+                        <div class="dropdown-check-btn" onclick="toggleEnvironmentDropdown()">
+                            <span id="environmentDropdownText">전체 환경</span>
+                            <span>▼</span>
+                        </div>
+                        <div class="dropdown-check-content" id="environmentDropdownContent">
+                            <div id="environmentRadioList"></div>
+                        </div>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 5px;">
+                        <span style="font-size: 0.9em; color: #495057;">📅</span>
+                        <input type="date" id="filterDateStart" style="width: 130px; height: 34px;">
+                        <span style="color: #6c757d;">~</span>
+                        <input type="date" id="filterDateEnd" style="width: 130px; height: 34px;">
+                        <button class="btn" onclick="applyFilters()" style="height: 34px; padding: 6px 20px; font-size: 0.85em; background: #495057; color: white; white-space: nowrap;">적용</button>
+                        <button class="btn" onclick="clearDateFilter()" style="height: 34px; padding: 6px 20px; font-size: 0.85em; background: #6c757d; color: white; white-space: nowrap;">초기화</button>
+                    </div>
+                </div>
+                
+                <!-- 필터 적용 시 합계 표시 -->
+                <div id="filterSummary" style="display: none; background: #f8f9fa; padding: 12px 15px; border-radius: 8px; margin-top: 10px; border: 1px solid #e2e8f0;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="color: #495057; font-size: 0.9em;">📊 필터 적용 결과</span>
+                        <div style="display: flex; gap: 20px; font-size: 0.95em;">
+                            <span id="filterTotalUSD" style="color: #212529; font-weight: 600;">💵 $0.00</span>
+                            <span id="filterTotalKRW" style="color: #212529; font-weight: 600;">💰 ₩0</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div id="dataTable"></div>
+                <div id="pagination" class="pagination"></div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- NProgress 로딩바 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/nprogress/0.2.0/nprogress.min.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/nprogress/0.2.0/nprogress.min.js"></script>
+    
+    <!-- 프로그레스 팝업 모달 -->
+    <div id="progressModal" style="
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.7);
+        z-index: 9999;
+        justify-content: center;
+        align-items: center;
+    ">
+        <div style="
+            background: white;
+            padding: 30px 40px;
+            border-radius: 12px;
+            min-width: 400px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+        ">
+            <h3 id="progressTitle" style="margin: 0 0 20px 0; color: #2c3e50; text-align: center;">처리 중...</h3>
+            <div style="
+                width: 100%;
+                height: 24px;
+                background: #e0e0e0;
+                border-radius: 12px;
+                overflow: hidden;
+                margin-bottom: 10px;
+            ">
+                <div id="progressBar" style="
+                    height: 100%;
+                    background: linear-gradient(90deg, #4299e1 0%, #2b6cb0 100%);
+                    width: 0%;
+                    transition: width 0.3s ease;
+                    border-radius: 12px;
+                "></div>
+            </div>
+            <p id="progressPercent" style="
+                margin: 0 0 10px 0;
+                color: #2b6cb0;
+                text-align: center;
+                font-size: 1.1em;
+                font-weight: bold;
+            ">0%</p>
+            <p id="progressText" style="
+                margin: 0 0 15px 0;
+                color: #6c757d;
+                text-align: center;
+                font-size: 0.9em;
+            ">잠시만 기다려주세요...</p>
+            <div id="progressResult" style="
+                display: none;
+                padding: 15px;
+                border-radius: 8px;
+                margin-top: 15px;
+                text-align: center;
+                font-size: 0.95em;
+            "></div>
+            <button id="progressCloseBtn" onclick="closeProgressModal()" style="
+                display: none;
+                margin-top: 15px;
+                padding: 10px 30px;
+                background: #4299e1;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                cursor: pointer;
+                font-size: 0.95em;
+                font-weight: 600;
+                width: 100%;
+            ">확인</button>
+        </div>
+    </div>
+    
+    <!-- 페이지 최상단 이동 버튼 -->
+    <button id="scrollTopBtn" onclick="scrollToTop()" title="맨 위로" style="
+        display: none;
+        position: fixed;
+        bottom: 30px;
+        right: 30px;
+        width: 50px;
+        height: 50px;
+        background: #495057;
+        border: none;
+        border-radius: 50%;
+        cursor: pointer;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        z-index: 1000;
+        transition: all 0.3s ease;
+        padding: 0;
+    ">
+        <svg viewBox="0 0 24 24" width="24" height="24" style="
+            fill: none;
+            stroke: white;
+            stroke-width: 2.5;
+            stroke-linecap: square;
+            stroke-linejoin: miter;
+            display: block;
+            margin: auto;
+        ">
+            <polyline points="4 14 12 6 20 14"></polyline>
+            <polyline points="4 20 12 12 20 20"></polyline>
+        </svg>
+    </button>
+    
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+    
+    <script>
+        // 스크롤 탑 버튼 표시/숨김
+        window.addEventListener('scroll', function() {
+            const scrollTopBtn = document.getElementById('scrollTopBtn');
+            if (window.scrollY > 300) {
+                scrollTopBtn.style.display = 'block';
+            } else {
+                scrollTopBtn.style.display = 'none';
+            }
+        });
+        
+        // 페이지 최상단으로 이동
+        function scrollToTop() {
+            window.scrollTo({
+                top: 0,
+                behavior: 'smooth'
+            });
+        }
+        
+        // 버튼 호버 효과
+        const scrollTopBtn = document.getElementById('scrollTopBtn');
+        scrollTopBtn.addEventListener('mouseenter', function() {
+            this.style.background = '#343a40';
+            this.style.transform = 'scale(1.1)';
+        });
+        scrollTopBtn.addEventListener('mouseleave', function() {
+            this.style.background = '#495057';
+            this.style.transform = 'scale(1)';
+        });
+    </script>
+</body>
+</html>
