@@ -90,22 +90,28 @@ class CloudCheckerParser:
             with open(file_path, 'r', encoding=self.encoding) as f:
                 lines = f.readlines()
             
-            # 빈 줄이나 집계 섹션 시작 지점 찾기
+            # Cost by Group 이전까지만 데이터로 사용
             data_lines = []
             header_found = False
             
             for i, line in enumerate(lines):
                 line_stripped = line.strip()
                 
-                # 빈 줄이거나 집계 섹션이면 중단
-                if not line_stripped or any(keyword in line_stripped for keyword in 
-                    ['Total,', 'Cost by Group,', 'Report for', 'Daily Max', 'Daily Min']):
+                # Cost by Group이 나오면 즉시 중단 (이후 데이터는 모두 무시)
+                if 'cost by group' in line_stripped.lower():
+                    print(f"[DEBUG] Cost by Group 발견 - {i+1}번째 줄에서 파싱 중단")
                     break
+                
+                # 빈 줄은 건너뛰기 (데이터 사이에 빈 줄이 있을 수 있음)
+                if not line_stripped:
+                    continue
                 
                 # 헤더 또는 데이터 라인
                 data_lines.append(line)
                 if not header_found and 'Date' in line:
                     header_found = True
+            
+            print(f"[DEBUG] 파싱된 데이터 라인 수: {len(data_lines)}")
             
             # 임시 파일에 데이터 섹션만 저장
             import tempfile
@@ -131,10 +137,35 @@ class CloudCheckerParser:
             if df.columns[-1] == '' or 'Unnamed' in str(df.columns[-1]):
                 df = df.iloc[:, :-1]
             
+            # Cost by Group 이후 행 제거 (DataFrame에서 한번 더 필터링)
+            df = self._remove_cost_by_group_rows(df)
+            
+            print(f"[DEBUG] 최종 데이터 행 수: {len(df)}")
+            
             return df
         
         except Exception as e:
             raise ValueError(f"CSV 파일 읽기 실패: {str(e)}")
+    
+    def _remove_cost_by_group_rows(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Cost by Group 이후 모든 행 제거
+        
+        Args:
+            df: 원본 데이터프레임
+            
+        Returns:
+            pd.DataFrame: 정리된 데이터프레임
+        """
+        # 모든 컬럼에서 'cost by group' 문자열 찾기
+        for idx, row in df.iterrows():
+            row_str = ' '.join([str(val).lower() for val in row.values if pd.notna(val)])
+            if 'cost by group' in row_str:
+                print(f"[DEBUG] DataFrame에서 Cost by Group 발견 - {idx}번째 행에서 자르기")
+                # 해당 행 이전까지만 반환
+                return df.loc[:idx-1] if idx > 0 else df.iloc[0:0]
+        
+        return df
     
     def _remove_summary_sections(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -201,6 +232,19 @@ class CloudCheckerParser:
         # 문자열로 변환
         date_str = str(date_value).strip()
         
+        # 집계 섹션 키워드가 포함되어 있으면 None 반환
+        invalid_keywords = [
+            'total', 'cost by', 'report', 'daily', 'service', 'description',
+            'amazon', 'aws', 'ec2', 'rds', 'vpc', 's3', 'lambda', 'elb',
+            'cloudwatch', 'route', 'elastic', 'data transfer', 'tax'
+        ]
+        if any(keyword in date_str.lower() for keyword in invalid_keywords):
+            return None
+        
+        # 날짜 형식 패턴 체크 (숫자와 구분자만 있어야 함)
+        if not re.match(r'^[\d\-/\s:]+$', date_str):
+            return None
+        
         # 여러 날짜 형식 시도
         date_formats = [
             '%Y-%m-%d',
@@ -217,9 +261,12 @@ class CloudCheckerParser:
             except ValueError:
                 continue
         
-        # pandas to_datetime으로 시도
+        # pandas to_datetime으로 시도 (엄격 모드)
         try:
-            return pd.to_datetime(date_value)
+            parsed = pd.to_datetime(date_str, errors='coerce')
+            if pd.isna(parsed):
+                return None
+            return parsed.to_pydatetime()
         except:
             return None
     
@@ -307,9 +354,14 @@ class CloudCheckerParser:
             elif f'user:{field}' in row.index:
                 tags[field] = row[f'user:{field}'] if not pd.isna(row[f'user:{field}']) else None
         
-        # Environment 기본값 설정 (없으면 cielmobility)
-        if not tags.get('environment'):
+        # Environment 정규화
+        env_value = tags.get('environment')
+        if not env_value or (isinstance(env_value, str) and env_value.strip() == ''):
+            # environment가 없거나 빈 값이면 cielmobility
             tags['environment'] = 'cielmobility'
+        elif env_value in ['dev-smartmobility', 'prd-smartmobility']:
+            # dev-smartmobility, prd-smartmobility -> smartmobility
+            tags['environment'] = 'smartmobility'
         
         # Environment에서 프로젝트명 추출 (예: prd-smartmobility -> smartmobility)
         if tags.get('environment'):

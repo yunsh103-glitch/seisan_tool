@@ -5,8 +5,13 @@ let uploadedData = null;
 let dailyCostsData = null; // 전체 일별 비용
 let dailyCostsByEnvData = null; // 환경별 일별 비용
 
+// 이중 업로드 시스템용 전역 변수
+let cielData = null; // 씨엘모빌리티 데이터 (스마일샤크 → 씨엘모빌리티)
+let segiData = null; // 세기모빌리티 데이터 (씨엘모빌리티 → 세기모빌리티)
+let currentDataType = 'ciel'; // 현재 표시 중인 데이터 타입
+
 // 프로그레스 바 함수
-function showProgressModal(title, text) {
+function showProgressModal(title, text, durationSeconds = 3) {
     const modal = document.getElementById('progressModal');
     const progressBar = document.getElementById('progressBar');
     const progressPercent = document.getElementById('progressPercent');
@@ -22,16 +27,34 @@ function showProgressModal(title, text) {
     // NProgress 시작
     NProgress.start();
     
-    // 애니메이션으로 진행률 증가
+    // 0% → 90%까지 빠르게, 90% → 99%까지 천천히 (실제 완료 대기)
+    const updateInterval = 100;
+    const fastPhaseSteps = (durationSeconds * 1000) / updateInterval; // 예상 시간 동안 90%까지
+    const incrementFast = 90 / fastPhaseSteps;
+    
     let progress = 0;
+    let phase = 'fast'; // 'fast' → 'slow'
+    
     const interval = setInterval(() => {
-        progress += Math.random() * 30;
-        if (progress > 90) progress = 90;
+        if (phase === 'fast') {
+            progress += incrementFast;
+            if (progress >= 90) {
+                progress = 90;
+                phase = 'slow';
+            }
+        } else {
+            // 90% 이후: 아주 천천히 증가 (99%까지만, 100%는 완료 시에만)
+            progress += 0.1;
+            if (progress >= 99) {
+                progress = 99;
+            }
+        }
+        
         const roundedProgress = Math.round(progress);
         progressBar.style.width = roundedProgress + '%';
         progressPercent.textContent = roundedProgress + '%';
         NProgress.set(progress / 100);
-    }, 300);
+    }, updateInterval);
     
     return interval;
 }
@@ -76,7 +99,7 @@ function showProgressResult(isSuccess, message, details = '') {
     if (isSuccess) {
         resultDiv.style.background = '#e9ecef';
         resultDiv.style.border = '2px solid #495057';
-        resultDiv.style.color = '#212529';
+        resultDiv.style.color = '#495057';
         resultDiv.innerHTML = `
             <div style="font-size: 2em; margin-bottom: 10px;">✓</div>
             <div style="font-weight: 600; margin-bottom: 8px;">${message}</div>
@@ -125,32 +148,67 @@ document.addEventListener('DOMContentLoaded', function() {
     const today = new Date().toISOString().split('T')[0];
     document.getElementById('apiDate').value = today;
     
-    // 파일 업로드 이벤트
-    const fileInput = document.getElementById('fileInput');
-    const uploadArea = document.getElementById('uploadArea');
+    // 씨엘모빌리티 파일 업로드 이벤트
+    const fileInputCiel = document.getElementById('fileInputCiel');
+    const uploadAreaCiel = document.getElementById('uploadAreaCiel');
     
-    fileInput.addEventListener('change', handleFileSelect);
+    if (fileInputCiel) {
+        fileInputCiel.addEventListener('change', () => handleFileSelectForType('ciel'));
+    }
     
-    // 드래그 앤 드롭
-    uploadArea.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        uploadArea.classList.add('dragover');
-    });
-    
-    uploadArea.addEventListener('dragleave', () => {
-        uploadArea.classList.remove('dragover');
-    });
-    
-    uploadArea.addEventListener('drop', (e) => {
-        e.preventDefault();
-        uploadArea.classList.remove('dragover');
+    // 드래그 앤 드롭 (씨엘모빌리티)
+    if (uploadAreaCiel) {
+        uploadAreaCiel.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadAreaCiel.classList.add('dragover');
+        });
         
-        const files = e.dataTransfer.files;
-        if (files.length > 0) {
-            fileInput.files = files;
-            handleFileSelect();
-        }
-    });
+        uploadAreaCiel.addEventListener('dragleave', () => {
+            uploadAreaCiel.classList.remove('dragover');
+        });
+        
+        uploadAreaCiel.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadAreaCiel.classList.remove('dragover');
+            
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                fileInputCiel.files = files;
+                handleFileSelectForType('ciel');
+            }
+        });
+    }
+    
+    // 세기모빌리티 파일 업로드 이벤트
+    const fileInputSegi = document.getElementById('fileInputSegi');
+    const uploadAreaSegi = document.getElementById('uploadAreaSegi');
+    
+    if (fileInputSegi) {
+        fileInputSegi.addEventListener('change', () => handleFileSelectForType('segi'));
+    }
+    
+    // 드래그 앤 드롭 (세기모빌리티)
+    if (uploadAreaSegi) {
+        uploadAreaSegi.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadAreaSegi.classList.add('dragover');
+        });
+        
+        uploadAreaSegi.addEventListener('dragleave', () => {
+            uploadAreaSegi.classList.remove('dragover');
+        });
+        
+        uploadAreaSegi.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadAreaSegi.classList.remove('dragover');
+            
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                fileInputSegi.files = files;
+                handleFileSelectForType('segi');
+            }
+        });
+    }
     
     // 전역 키보드 이벤트 (엔터, 스페이스바로 확인 버튼 동작)
     document.addEventListener('keydown', function(e) {
@@ -167,7 +225,334 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 
-// 파일 업로드 처리
+// 타입별 파일 업로드 처리
+async function handleFileSelectForType(type) {
+    const fileInputId = type === 'ciel' ? 'fileInputCiel' : 'fileInputSegi';
+    const statusId = type === 'ciel' ? 'uploadStatusCiel' : 'uploadStatusSegi';
+    const typeName = type === 'ciel' ? '씨엘모빌리티' : '세기모빌리티';
+    
+    const fileInput = document.getElementById(fileInputId);
+    const files = fileInput.files;
+    
+    if (!files || files.length === 0) return;
+    
+    const formData = new FormData();
+    
+    // 여러 파일 추가
+    for (let i = 0; i < files.length; i++) {
+        formData.append('files', files[i]);
+    }
+    // 타입 정보 추가
+    formData.append('data_type', type);
+    
+    // 프로그레스 바 표시
+    const uploadDuration = Math.min(1 + files.length * 0.3, 2);
+    const progressInterval = showProgressModal(
+        `${typeName} 파일 업로드 중`,
+        `${files.length}개 파일을 처리하고 있습니다...`,
+        uploadDuration
+    );
+    
+    showLoading(statusId, `${files.length}개 파일 업로드 중...`);
+    
+    try {
+        const response = await fetch('/api/upload', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const result = await response.json();
+        
+        // 프로그레스 바 완료
+        hideProgressModal(progressInterval);
+        
+        if (result.success) {
+            // 타입에 따라 데이터 저장
+            if (type === 'ciel') {
+                cielData = result;
+            } else {
+                segiData = result;
+            }
+            
+            // 성공 메시지 생성
+            let details = `${result.files.length}개 파일, ${result.summary.total_records}개 레코드`;
+            if (result.duplicates && result.duplicates.removed > 0) {
+                details += `<br>중복 ${result.duplicates.removed}건 제거됨`;
+            }
+            
+            showProgressResult(true, `${typeName} 파일 업로드 완료`, details);
+            
+            // 업로드된 파일 목록 표시
+            let fileListHtml = '<div style="margin-top: 10px; padding: 10px; background: #f8f9fa; border-radius: 4px; text-align: left;">';
+            fileListHtml += '<strong>📁 업로드된 파일:</strong><ul style="margin: 8px 0 0 0; padding-left: 20px; list-style: none;">';
+            result.files.forEach(filename => {
+                fileListHtml += `<li style="word-break: break-all; margin-bottom: 4px;">• ${filename}</li>`;
+            });
+            fileListHtml += '</ul>';
+            
+            // 중복 제거 정보 표시
+            if (result.duplicates && result.duplicates.removed > 0) {
+                fileListHtml += `<div style="margin-top: 8px; padding: 8px; background: #fff3cd; border-left: 3px solid #ffc107; font-size: 0.9em;">`;
+                fileListHtml += `⚠️ <strong>중복 제거:</strong> 총 ${result.duplicates.total}건 중 ${result.duplicates.removed}건의 중복 데이터가 제거되었습니다.`;
+                fileListHtml += `</div>`;
+            }
+            
+            fileListHtml += '</div>';
+            
+            showSuccess(statusId, `✅ ${result.summary.total_records}개 레코드 로드됨` + fileListHtml);
+            
+            // 두 파일이 모두 업로드되었는지 확인
+            if (cielData && segiData) {
+                // 두 파일 모두 업로드됨 - 환율 섹션 표시 및 통합 요약
+                displayCombinedSummary();
+                
+                setTimeout(() => {
+                    scrollToSection('exchangeSection');
+                }, 500);
+            }
+            // 하나만 업로드된 경우 - 2단계로 넘어가지 않고 대기
+        } else {
+            showProgressResult(false, `${typeName} 파일 업로드 실패`, result.error);
+            showError(statusId, result.error);
+        }
+    } catch (error) {
+        hideProgressModal(progressInterval);
+        showProgressResult(false, '업로드 오류 발생', error.message);
+        showError(statusId, '업로드 실패: ' + error.message);
+    }
+}
+
+// 단일 데이터 요약 표시
+function displaySingleSummary(type, summary) {
+    const section = document.getElementById('summarySection');
+    section.classList.remove('hidden');
+    
+    document.getElementById('exchangeRateInfo').textContent = '';
+    
+    const startDate = summary.date_range.start.split(' ')[0];
+    const endDate = summary.date_range.end.split(' ')[0];
+    const totalUSD = summary.total_cost_usd || 0;
+    
+    const grid = document.getElementById('summaryGrid');
+    
+    if (type === 'ciel') {
+        window.summaryCielTotalUSD = totalUSD;
+        window.summaryCielDateRange = { start: startDate, end: endDate };
+        
+        grid.innerHTML = `
+            <div class="summary-card">
+                <h3>기간</h3>
+                <div class="value">${startDate} ~ ${endDate}</div>
+            </div>
+            <div class="summary-card" style="background: #F2F4FF;">
+                <h3>📄 세금계산서 발행 금액(매입) (USD / KRW)</h3>
+                <div class="value">
+                    <span>$${totalUSD.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                    <span style="color: #6c757d; margin: 0 8px;">/</span>
+                    <span id="cielKrwValue" style="color: #6c757d;">-</span>
+                </div>
+            </div>
+        `;
+    } else {
+        window.summarySegiTotalUSD = totalUSD;
+        window.summarySegiDateRange = { start: startDate, end: endDate };
+        
+        grid.innerHTML = `
+            <div class="summary-card">
+                <h3>기간</h3>
+                <div class="value">${startDate} ~ ${endDate}</div>
+            </div>
+            <div class="summary-card" style="background: #FFEFEF;">
+                <h3>📤 세기모빌리티 청구 금액(매출) (USD / KRW)</h3>
+                <div class="value" style="color: #E57373;">
+                    <span>$${totalUSD.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                    <span style="color: #6c757d; margin: 0 8px;">/</span>
+                    <span id="segiKrwValue">-</span>
+                </div>
+            </div>
+        `;
+    }
+    
+    // 일별 비용 데이터 저장
+    dailyCostsData = summary.daily_costs;
+    dailyCostsByEnvData = summary.daily_costs_by_env;
+    
+    // 환경 필터 드롭다운 초기화
+    initDailyTrendEnvFilter(summary.environments || []);
+    
+    // 일별 비용 추이 차트
+    displayDailyTrendChart(summary.daily_costs);
+    
+    // 날짜 필터 설정
+    const filterDateStart = document.getElementById('filterDateStart');
+    const filterDateEnd = document.getElementById('filterDateEnd');
+    if (filterDateStart && filterDateEnd) {
+        filterDateStart.min = startDate;
+        filterDateStart.max = endDate;
+        filterDateEnd.min = startDate;
+        filterDateEnd.max = endDate;
+        filterDateStart.value = startDate;
+        filterDateEnd.value = endDate;
+    }
+}
+
+// 통합 요약 정보 표시 (두 파일 모두 업로드됨)
+function displayCombinedSummary() {
+    const section = document.getElementById('summarySection');
+    section.classList.remove('hidden');
+    
+    document.getElementById('exchangeRateInfo').textContent = '';
+    
+    // 씨엘모빌리티 데이터
+    const cielSummary = cielData.summary;
+    const cielStartDate = cielSummary.date_range.start.split(' ')[0];
+    const cielEndDate = cielSummary.date_range.end.split(' ')[0];
+    const cielTotalUSD = cielSummary.total_cost_usd || 0;
+    
+    // 세기모빌리티 데이터
+    const segiSummary = segiData.summary;
+    const segiTotalUSD = segiSummary.total_cost_usd || 0;
+    
+    // MSP 정보 (씨엘모빌리티 데이터에서)
+    const mspInfo = cielSummary.msp_info || null;
+    const customChargeUSD = cielSummary.custom_charge_usd || 0;
+    const nonCustomChargeUSD = cielSummary.non_custom_charge_usd || 0;
+    
+    console.log('MSP Info:', mspInfo);
+    console.log('Custom Charge USD:', customChargeUSD);
+    console.log('Non Custom Charge USD:', nonCustomChargeUSD);
+    
+    // MSP 금액
+    const m2Amount = mspInfo ? mspInfo.msp_invoice_amount : 0;  // M2 (20%)
+    const m1Amount = mspInfo ? mspInfo.msp_segi_amount : 0;     // M1 (세기모빌리티 MSP)
+    const cielMspAmount = mspInfo ? mspInfo.msp_ciel_usage : 0; // M2 - M1 (씨엘모빌리티 사용 MSP)
+    
+    // 차액 계산 (씨엘모빌리티 사용 금액 = 세금계산서 발행 금액 - 세기모빌리티 청구 금액)
+    const cielUsageUSD = cielTotalUSD - segiTotalUSD;
+    
+    // 전역 변수 저장
+    window.summaryCielTotalUSD = cielTotalUSD;
+    window.summarySegiTotalUSD = segiTotalUSD;
+    window.summaryCielUsageUSD = cielUsageUSD;
+    window.summaryCielDateRange = { start: cielStartDate, end: cielEndDate };
+    window.summaryMspInfo = mspInfo;
+    window.summaryNonCustomChargeUSD = nonCustomChargeUSD;
+    window.summaryM2Amount = m2Amount;
+    window.summaryM1Amount = m1Amount;
+    window.summaryCielMspAmount = cielMspAmount;
+    
+    // 제목에 기간 표시
+    const summaryDateRange = document.getElementById('summaryDateRange');
+    if (summaryDateRange) {
+        summaryDateRange.textContent = `/ ${cielStartDate} ~ ${cielEndDate}`;
+    }
+    
+    const grid = document.getElementById('summaryGrid');
+    grid.innerHTML = `
+        <div class="summary-card" style="background: #F2F4FF;">
+            <h3>📄 세금계산서 발행 금액(매입) (USD / KRW)</h3>
+            <div class="value">
+                <span>$${cielTotalUSD.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                <span style="color: #6c757d; margin: 0 8px;">/</span>
+                <span id="cielKrwValue" style="color: #6c757d;">-</span>
+            </div>
+            <div style="font-size: 0.85em; color: #6c757d; margin-top: 8px; padding-top: 8px; border-top: 1px dashed #cbd5e0;">
+                (M2=AWS 사용료*20%, $${m2Amount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} / <span id="m2KrwValue">-</span>)
+            </div>
+        </div>
+        <div class="summary-card" style="background: #F2F4FF;">
+            <h3>💰 AWS 사용료 (USD / KRW)</h3>
+            <div class="value">
+                <span>$${nonCustomChargeUSD.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                <span style="color: #6c757d; margin: 0 8px;">/</span>
+                <span id="nonCustomChargeKrwValue" style="color: #6c757d;">-</span>
+            </div>
+            <div style="font-size: 0.85em; color: #6c757d; margin-top: 8px; padding-top: 8px; border-top: 1px dashed #cbd5e0;">MSP 계산 기준이 되는 금액</div>
+        </div>
+        <div class="summary-card" style="background: #FFEFEF;">
+            <h3>📤 세기모빌리티 청구 금액(매출) (USD / KRW)</h3>
+            <div class="value" style="color: #E57373;">
+                <span>$${segiTotalUSD.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                <span style="color: #6c757d; margin: 0 8px;">/</span>
+                <span id="segiKrwValue">-</span>
+            </div>
+            <div style="font-size: 0.85em; color: #6c757d; margin-top: 8px; padding-top: 8px; border-top: 1px dashed #f5a5a5;">
+                (M1=AWS 사용료가 $20,000 미만=$1,000(5%에 해당), $${m1Amount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} / <span id="m1KrwValue">-</span>)
+            </div>
+        </div>
+        <div class="summary-card" style="background: #F8F9FA;">
+            <h3>🏢 씨엘모빌리티 사용 금액 (USD / KRW)</h3>
+            <div class="value">
+                <span>$${cielUsageUSD.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                <span style="color: #6c757d; margin: 0 8px;">/</span>
+                <span id="cielUsageKrwValue" style="color: #6c757d;">-</span>
+            </div>
+            <div style="font-size: 0.85em; color: #6c757d; margin-top: 8px; padding-top: 8px; border-top: 1px dashed #cbd5e0;">
+                (M2-M1, $${cielMspAmount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} / <span id="cielMspKrwValue">-</span>)
+            </div>
+        </div>
+    `;
+    
+    // 일별 비용 데이터 저장 (두 파일의 환경별 데이터를 합침)
+    // 씨엘모빌리티 데이터의 환경별 비용
+    const cielDailyByEnv = cielSummary.daily_costs_by_env || {};
+    // 세기모빌리티 데이터의 환경별 비용
+    const segiDailyByEnv = segiSummary.daily_costs_by_env || {};
+    
+    // 두 데이터를 합침
+    const combinedDailyByEnv = { ...cielDailyByEnv };
+    for (const env in segiDailyByEnv) {
+        if (combinedDailyByEnv[env]) {
+            // 같은 환경이 있으면 날짜별로 합산
+            for (const date in segiDailyByEnv[env]) {
+                combinedDailyByEnv[env][date] = (combinedDailyByEnv[env][date] || 0) + segiDailyByEnv[env][date];
+            }
+        } else {
+            combinedDailyByEnv[env] = { ...segiDailyByEnv[env] };
+        }
+    }
+    
+    // 전체 일별 비용도 합침
+    const cielDailyCosts = cielSummary.daily_costs || {};
+    const segiDailyCosts = segiSummary.daily_costs || {};
+    const combinedDailyCosts = { ...cielDailyCosts };
+    for (const date in segiDailyCosts) {
+        combinedDailyCosts[date] = (combinedDailyCosts[date] || 0) + segiDailyCosts[date];
+    }
+    
+    dailyCostsData = combinedDailyCosts;
+    dailyCostsByEnvData = combinedDailyByEnv;
+    
+    console.log('[DEBUG] Combined daily costs by env:', combinedDailyByEnv);
+    console.log('[DEBUG] Environments:', Object.keys(combinedDailyByEnv));
+    
+    // 환경 필터 드롭다운 초기화 (두 데이터의 환경을 합침)
+    const cielEnvs = cielSummary.environments || [];
+    const segiEnvs = segiSummary.environments || [];
+    const allEnvs = [...new Set([...cielEnvs, ...segiEnvs])].sort();
+    initDailyTrendEnvFilter(allEnvs);
+    
+    // 일별 비용 추이 차트 (환경별로 표시)
+    if (Object.keys(combinedDailyByEnv).length > 0) {
+        displayDailyTrendChartByEnv(combinedDailyByEnv);
+    } else {
+        displayDailyTrendChart(combinedDailyCosts);
+    }
+    
+    // 날짜 필터 설정
+    const filterDateStart = document.getElementById('filterDateStart');
+    const filterDateEnd = document.getElementById('filterDateEnd');
+    if (filterDateStart && filterDateEnd) {
+        filterDateStart.min = cielStartDate;
+        filterDateStart.max = cielEndDate;
+        filterDateEnd.min = cielStartDate;
+        filterDateEnd.max = cielEndDate;
+        filterDateStart.value = cielStartDate;
+        filterDateEnd.value = cielEndDate;
+    }
+}
+
+// 파일 업로드 처리 (기존 호환용)
 async function handleFileSelect() {
     const fileInput = document.getElementById('fileInput');
     const files = fileInput.files;
@@ -181,10 +566,12 @@ async function handleFileSelect() {
         formData.append('files', files[i]);
     }
     
-    // 프로그레스 바 표시
+    // 프로그레스 바 표시 (파일 개수에 따라 1~2초)
+    const uploadDuration = Math.min(1 + files.length * 0.3, 2);
     const progressInterval = showProgressModal(
         '파일 업로드 중',
-        `${files.length}개 파일을 처리하고 있습니다...`
+        `${files.length}개 파일을 처리하고 있습니다...`,
+        uploadDuration
     );
     
     showLoading('uploadStatus', `${files.length}개 파일 업로드 중...`);
@@ -213,9 +600,9 @@ async function handleFileSelect() {
             
             // 업로드된 파일 목록 표시
             let fileListHtml = '<div style="margin-top: 10px; padding: 10px; background: #f8f9fa; border-radius: 4px;">';
-            fileListHtml += '<strong>📁 업로드된 파일:</strong><ul style="margin: 8px 0 0 0; padding-left: 20px;">';
+            fileListHtml += '<strong>📁 업로드된 파일:</strong><ul style="margin: 8px 0 0 0; padding-left: 20px; list-style: none;">';
             result.files.forEach(filename => {
-                fileListHtml += `<li>${filename}</li>`;
+                fileListHtml += `<li style="word-break: break-all; margin-bottom: 4px;">• ${filename}</li>`;
             });
             fileListHtml += '</ul>';
             
@@ -259,29 +646,54 @@ function displayInitialSummary(summary) {
     // 전역 변수에 날짜 범위 저장
     window.summaryDateRange = summary.date_range;
     window.summaryTotalUSD = summary.total_cost_usd;
+    window.summaryCielmobilityUSD = summary.cielmobility_usd || 0;
+    window.summarySmartmobilityUSD = summary.smartmobility_usd || 0;
+    window.summaryHasSmartmobility = summary.has_smartmobility || false;
     
     // 날짜에서 시간 제거 (yyyy-mm-dd 형식만)
     const startDate = summary.date_range.start.split(' ')[0];
     const endDate = summary.date_range.end.split(' ')[0];
     
-    const grid = document.getElementById('summaryGrid');
-    grid.innerHTML = `
-        <div class="summary-card">
-            <h3>기간</h3>
-            <div class="value">${startDate}<br>~<br>${endDate}</div>
-        </div>
-        <div class="summary-card">
-            <h3>총 비용 (USD)</h3>
-            <div class="value">$${summary.total_cost_usd.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
-        </div>
-        <div class="summary-card" id="krwSummaryCard" style="display: none;">
-            <h3>총 비용 (KRW)</h3>
-            <div class="value" id="krwTotalValue">-</div>
-        </div>
-    `;
+    const cielmobilityUSD = summary.cielmobility_usd || 0;
+    const smartmobilityUSD = summary.smartmobility_usd || 0;
+    const hasSmartmobility = summary.has_smartmobility || false;
     
-    // 서비스별 차트
-    displayServiceChart(summary.service_costs);
+    const grid = document.getElementById('summaryGrid');
+    
+    // 환경에 따라 다른 카드 표시
+    if (hasSmartmobility) {
+        // smartmobility 환경이 있는 경우: 세기모빌리티 청구 비용 표시
+        grid.innerHTML = `
+            <div class="summary-card">
+                <h3>기간</h3>
+                <div class="value">${startDate}<br>~<br>${endDate}</div>
+            </div>
+            <div class="summary-card">
+                <h3>세기모빌리티 청구 비용 (USD)</h3>
+                <div class="value">$${smartmobilityUSD.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
+            </div>
+            <div class="summary-card" id="smartmobilityKrwCard" style="display: none;">
+                <h3>세기모빌리티 청구 비용 (KRW)</h3>
+                <div class="value" id="smartmobilityKrwValue">-</div>
+            </div>
+        `;
+    } else {
+        // environment가 없는 경우: 씨엘모빌리티 총 비용 표시
+        grid.innerHTML = `
+            <div class="summary-card">
+                <h3>기간</h3>
+                <div class="value">${startDate}<br>~<br>${endDate}</div>
+            </div>
+            <div class="summary-card">
+                <h3>씨엘모빌리티 총 비용 (USD)</h3>
+                <div class="value">$${cielmobilityUSD.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
+            </div>
+            <div class="summary-card" id="cielmobilityKrwCard" style="display: none;">
+                <h3>씨엘모빌리티 총 비용 (KRW)</h3>
+                <div class="value" id="cielmobilityKrwValue">-</div>
+            </div>
+        `;
+    }
     
     // 일별 비용 데이터 저장 (전역)
     dailyCostsData = summary.daily_costs;
@@ -292,6 +704,19 @@ function displayInitialSummary(summary) {
     
     // 일별 비용 추이 차트
     displayDailyTrendChart(summary.daily_costs);
+    
+    // 날짜 필터 입력창에 min/max 설정 및 기본 달력 월 설정
+    const filterDateStart = document.getElementById('filterDateStart');
+    const filterDateEnd = document.getElementById('filterDateEnd');
+    if (filterDateStart && filterDateEnd) {
+        filterDateStart.min = startDate;
+        filterDateStart.max = endDate;
+        filterDateEnd.min = startDate;
+        filterDateEnd.max = endDate;
+        // 기본값을 시작일로 설정하여 달력이 해당 월에서 시작되도록 함
+        filterDateStart.value = startDate;
+        filterDateEnd.value = endDate;
+    }
     
     // 요약 섹션으로 슬라이딩 (약간의 지연 후)
     setTimeout(() => {
@@ -310,10 +735,11 @@ async function fetchExchangeRateAPI() {
     
     console.log('[환율 조회] 요청 날짜:', apiDate);
     
-    // 프로그레스 바 표시
+    // 프로그레스 바 표시 (네트워크 호출 3초)
     const progressInterval = showProgressModal(
         '환율 조회 및 적용 중',
-        `${apiDate} 환율 정보를 가져와서 데이터에 적용하고 있습니다...`
+        `${apiDate} 환율 정보를 가져와서 데이터에 적용하고 있습니다...`,
+        3
     );
     
     try {
@@ -350,6 +776,9 @@ async function fetchExchangeRateAPI() {
                     '환율 조회 및 적용 완료',
                     `조회된 환율: 1 USD = ${result.rate.toLocaleString()} KRW<br>환율이 모든 데이터에 적용되었습니다.`
                 );
+                
+                // HTML 저장 버튼 표시
+                showSaveHtmlButton();
                 
                 // 요약 섹션으로 스크롤 (모달 닫힌 후)
                 setTimeout(() => {
@@ -399,9 +828,9 @@ async function applyExchangeRate(rate) {
             // 요약 정보 업데이트
             updateSummaryWithKRW(result.summary);
             
-            // 차트 섹션으로 슬라이딩
+            // 비용 요약 섹션으로 슬라이딩
             setTimeout(() => {
-                scrollToSection('chartSection');
+                scrollToSection('summarySection');
             }, 500);
             
             // 데이터 테이블 표시
@@ -425,10 +854,11 @@ async function setExchangeRate() {
         return;
     }
     
-    // 프로그레스 바 표시
+    // 프로그레스 바 표시 (로컬 계산 1.5초)
     const progressInterval = showProgressModal(
         '환율 적용 중',
-        `1 USD = ${rate.toLocaleString()} KRW 환율을 데이터에 적용하고 있습니다...`
+        `1 USD = ${rate.toLocaleString()} KRW 환율을 데이터에 적용하고 있습니다...`,
+        1.5
     );
     
     const result = await applyExchangeRate(rate);
@@ -443,6 +873,9 @@ async function setExchangeRate() {
             `1 USD = ${rate.toLocaleString()} KRW<br>환율이 모든 데이터에 적용되었습니다.`
         );
         
+        // HTML 저장 버튼 표시
+        showSaveHtmlButton();
+        
         // 요약 섹션으로 스크롤
         setTimeout(() => {
             scrollToSection('summarySection');
@@ -456,134 +889,92 @@ async function setExchangeRate() {
 function updateSummaryWithKRW(summary) {
     // 환율 정보를 타이틀 옆에 표시
     const exchangeRateInfo = document.getElementById('exchangeRateInfo');
-    const today = new Date();
-    const month = String(today.getMonth() + 1).padStart(2, '0');
-    const day = String(today.getDate()).padStart(2, '0');
-    exchangeRateInfo.textContent = `(${month}/${day} 기준, ${summary.exchange_rate.toLocaleString(undefined, {minimumFractionDigits: 2})}원)`;
+    exchangeRateInfo.textContent = `/ (환율 ${summary.exchange_rate.toLocaleString(undefined, {minimumFractionDigits: 2})}원 적용)`;
     
-    // KRW 카드 표시 및 값 업데이트
-    const krwCard = document.getElementById('krwSummaryCard');
-    const krwValue = document.getElementById('krwTotalValue');
+    const rate = summary.exchange_rate;
     
-    if (krwCard && krwValue) {
-        krwCard.style.display = 'flex';
-        krwValue.textContent = `₩${summary.total_cost_krw.toLocaleString(undefined, {maximumFractionDigits: 0})}`;
+    // 새 이중 업로드 시스템 (cielData, segiData 사용)
+    if (cielData || segiData) {
+        // 씨엘모빌리티 KRW 값 업데이트
+        const cielKrwValue = document.getElementById('cielKrwValue');
+        if (cielKrwValue && window.summaryCielTotalUSD) {
+            const cielKRW = window.summaryCielTotalUSD * rate;
+            cielKrwValue.textContent = `₩${cielKRW.toLocaleString(undefined, {maximumFractionDigits: 0})}`;
+            cielKrwValue.style.color = '#212529';
+        }
+        
+        // 세기모빌리티 KRW 값 업데이트 (보라색 강조 유지)
+        const segiKrwValue = document.getElementById('segiKrwValue');
+        if (segiKrwValue && window.summarySegiTotalUSD) {
+            const segiKRW = window.summarySegiTotalUSD * rate;
+            segiKrwValue.textContent = `₩${segiKRW.toLocaleString(undefined, {maximumFractionDigits: 0})}`;
+            segiKrwValue.style.color = '#E57373';
+        }
+        
+        // 씨엘모빌리티 사용 금액 KRW 값 업데이트 (차액)
+        const cielUsageKrwValue = document.getElementById('cielUsageKrwValue');
+        if (cielUsageKrwValue && window.summaryCielUsageUSD !== undefined) {
+            const cielUsageKRW = window.summaryCielUsageUSD * rate;
+            cielUsageKrwValue.textContent = `₩${cielUsageKRW.toLocaleString(undefined, {maximumFractionDigits: 0})}`;
+            cielUsageKrwValue.style.color = '#212529';
+        }
+        
+        // MSP 금액 KRW 값 업데이트
+        if (window.summaryMspInfo) {
+            const mspInfo = window.summaryMspInfo;
+            
+            // M2 (세금계산서 발행 MSP)
+            const m2KrwValue = document.getElementById('m2KrwValue');
+            if (m2KrwValue) {
+                const m2KRW = mspInfo.msp_invoice_amount * rate;
+                m2KrwValue.textContent = `₩${m2KRW.toLocaleString(undefined, {maximumFractionDigits: 0})}`;
+            }
+            
+            // M1 (세기모빌리티 MSP)
+            const m1KrwValue = document.getElementById('m1KrwValue');
+            if (m1KrwValue) {
+                const m1KRW = mspInfo.msp_segi_amount * rate;
+                m1KrwValue.textContent = `₩${m1KRW.toLocaleString(undefined, {maximumFractionDigits: 0})}`;
+            }
+            
+            // 씨엘모빌리티 사용 MSP (M2 - M1)
+            const cielMspKrwValue = document.getElementById('cielMspKrwValue');
+            if (cielMspKrwValue) {
+                const cielMspKRW = mspInfo.msp_ciel_usage * rate;
+                cielMspKrwValue.textContent = `₩${cielMspKRW.toLocaleString(undefined, {maximumFractionDigits: 0})}`;
+            }
+        }
+        
+        // MSP외 사용요금 (Custom Charge 외 금액) KRW 값 업데이트
+        const nonCustomChargeKrwValue = document.getElementById('nonCustomChargeKrwValue');
+        if (nonCustomChargeKrwValue && window.summaryNonCustomChargeUSD !== undefined) {
+            const nonCustomChargeKRW = window.summaryNonCustomChargeUSD * rate;
+            nonCustomChargeKrwValue.textContent = `₩${nonCustomChargeKRW.toLocaleString(undefined, {maximumFractionDigits: 0})}`;
+            nonCustomChargeKrwValue.style.color = '#212529';
+        }
+    } else {
+        // 기존 단일 업로드 시스템 (하위 호환)
+        const cielmobilityKRW = (window.summaryCielmobilityUSD || 0) * rate;
+        const smartmobilityKRW = (window.summarySmartmobilityUSD || 0) * rate;
+        const hasSmartmobility = window.summaryHasSmartmobility || false;
+        
+        if (hasSmartmobility) {
+            const smartmobilityKrwValue = document.getElementById('smartmobilityKrwValue');
+            if (smartmobilityKrwValue) {
+                smartmobilityKrwValue.textContent = `₩${smartmobilityKRW.toLocaleString(undefined, {maximumFractionDigits: 0})}`;
+                smartmobilityKrwValue.style.color = '#212529';
+            }
+        } else {
+            const cielmobilityKrwValue = document.getElementById('cielmobilityKrwValue');
+            if (cielmobilityKrwValue) {
+                cielmobilityKrwValue.textContent = `₩${cielmobilityKRW.toLocaleString(undefined, {maximumFractionDigits: 0})}`;
+                cielmobilityKrwValue.style.color = '#212529';
+            }
+        }
     }
     
     // 일별 비용 추이 차트에 환율 적용 (툴팁에서 KRW 표시용)
     dailyTrendExchangeRate = summary.exchange_rate;
-}
-
-// 서비스별 차트 표시 (100% 누적 가로 막대형)
-function displayServiceChart(serviceCosts) {
-    const section = document.getElementById('chartSection');
-    section.classList.remove('hidden');
-    
-    const ctx = document.getElementById('serviceChart').getContext('2d');
-    
-    // 비용이 0보다 큰 서비스만 필터링하고, 큰 순서로 정렬
-    const sortedEntries = Object.entries(serviceCosts)
-        .filter(([name, cost]) => cost > 0)
-        .sort((a, b) => b[1] - a[1]);
-    
-    if (sortedEntries.length === 0) {
-        section.innerHTML = '<p style="text-align: center; padding: 20px; color: #6c757d;">비용이 발생한 서비스가 없습니다</p>';
-        return;
-    }
-    
-    const labels = sortedEntries.map(e => e[0]);
-    const data = sortedEntries.map(e => e[1]);
-    const total = data.reduce((sum, val) => sum + val, 0);
-    
-    // 색상 팔레트
-    const colors = [
-        'rgba(66, 153, 225, 0.8)',  // #4299e1 파란색
-        'rgba(160, 174, 192, 0.8)', // #a0aec0 회색
-        'rgba(159, 122, 234, 0.8)', // #9f7aea 보라색
-        'rgba(237, 137, 54, 0.8)',  // #ed8936 주황색
-        'rgba(72, 187, 120, 0.8)',  // #48bb78 녹색
-        'rgba(203, 213, 224, 0.8)', // #cbd5e0 밝은 회색
-        'rgba(73, 80, 87, 0.8)',    // #495057 진한 회색
-        'rgba(108, 117, 125, 0.8)'  // #6c757d 중간 회색
-    ];
-    
-    const borderColors = [
-        'rgba(66, 153, 225, 1)',
-        'rgba(160, 174, 192, 1)',
-        'rgba(159, 122, 234, 1)',
-        'rgba(237, 137, 54, 1)',
-        'rgba(72, 187, 120, 1)',
-        'rgba(203, 213, 224, 1)',
-        'rgba(73, 80, 87, 1)',
-        'rgba(108, 117, 125, 1)'
-    ];
-    
-    // 각 서비스를 개별 데이터셋으로 생성 (누적 효과)
-    const datasets = labels.map((label, i) => ({
-        label: label,
-        data: [data[i]],
-        backgroundColor: colors[i % colors.length],
-        borderColor: borderColors[i % borderColors.length],
-        borderWidth: 1
-    }));
-    
-    new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels: ['서비스별 비용'],
-            datasets: datasets
-        },
-        options: {
-            indexAxis: 'y', // 가로 막대형
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {
-                x: {
-                    stacked: true,
-                    max: total,
-                    display: false
-                },
-                y: {
-                    stacked: true,
-                    display: false
-                }
-            },
-            plugins: {
-                legend: {
-                    position: 'bottom',
-                    labels: {
-                        font: {
-                            size: 11
-                        },
-                        padding: 10,
-                        generateLabels: function(chart) {
-                            const datasets = chart.data.datasets;
-                            return datasets.map((dataset, i) => {
-                                const value = data[i];
-                                const percentage = ((value / total) * 100).toFixed(1);
-                                return {
-                                    text: `${dataset.label}: ${percentage}%`,
-                                    fillStyle: dataset.backgroundColor,
-                                    hidden: false,
-                                    index: i
-                                };
-                            });
-                        }
-                    }
-                },
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            const label = context.dataset.label || '';
-                            const value = context.parsed.x || 0;
-                            const percentage = ((value / total) * 100).toFixed(1);
-                            return `${label}: $${value.toLocaleString(undefined, {minimumFractionDigits: 2})} (${percentage}%)`;
-                        }
-                    }
-                }
-            }
-        }
-    });
 }
 
 // 일별 비용 추이 라인 차트
@@ -615,16 +1006,120 @@ function updateDailyTrendChart() {
     const selectedEnv = select ? select.value : '';
     
     if (selectedEnv && dailyCostsByEnvData && dailyCostsByEnvData[selectedEnv]) {
-        // 특정 환경 선택
-        displayDailyTrendChart(dailyCostsByEnvData[selectedEnv]);
+        // 특정 환경 선택 - 단일 환경 데이터로 표시
+        displaySingleEnvChart(dailyCostsByEnvData[selectedEnv], selectedEnv);
     } else {
-        // 전체 환경
-        displayDailyTrendChart(dailyCostsData);
+        // 전체 환경 - 모든 환경을 한 차트에 표시
+        if (dailyCostsByEnvData && Object.keys(dailyCostsByEnvData).length > 0) {
+            displayDailyTrendChartByEnv(dailyCostsByEnvData);
+        } else {
+            displaySingleEnvChart(dailyCostsData, '전체');
+        }
     }
+}
+
+// 단일 환경 차트 표시
+function displaySingleEnvChart(dailyCosts, envName) {
+    const section = document.getElementById('dailyTrendSection');
+    
+    if (!dailyCosts || Object.keys(dailyCosts).length === 0) {
+        section.classList.add('hidden');
+        return;
+    }
+    
+    section.classList.remove('hidden');
+    
+    const ctx = document.getElementById('dailyTrendChart').getContext('2d');
+    
+    // 기존 차트 제거
+    if (dailyTrendChart) {
+        dailyTrendChart.destroy();
+    }
+    
+    // 날짜순 정렬
+    const sortedDates = Object.keys(dailyCosts).sort();
+    const costs = sortedDates.map(date => dailyCosts[date]);
+    
+    // 날짜 포맷 (MM-DD)
+    const labels = sortedDates.map(date => {
+        const parts = date.split('-');
+        return `${parts[1]}-${parts[2]}`;
+    });
+    
+    // 환경별 색상
+    const envColors = {
+        'cielmobility': { border: '#4299e1', background: 'rgba(66, 153, 225, 0.1)' },
+        'smartmobility': { border: '#E57373', background: 'rgba(229, 115, 115, 0.1)' }
+    };
+    const colors = envColors[envName] || { border: '#4299e1', background: 'rgba(66, 153, 225, 0.1)' };
+    
+    dailyTrendChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: envName,
+                data: costs,
+                borderColor: colors.border,
+                backgroundColor: colors.background,
+                fill: true,
+                tension: 0.3,
+                pointRadius: 4,
+                pointHoverRadius: 6
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                intersect: false,
+                mode: 'index'
+            },
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'top',
+                    labels: {
+                        usePointStyle: true,
+                        padding: 15
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const value = context.parsed.y;
+                            let labelText = `$${value.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+                            if (dailyTrendExchangeRate) {
+                                const krwValue = value * dailyTrendExchangeRate;
+                                labelText += ` (₩${krwValue.toLocaleString(undefined, {maximumFractionDigits: 0})})`;
+                            }
+                            return labelText;
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return '$' + value.toLocaleString();
+                        }
+                    }
+                }
+            }
+        }
+    });
 }
 
 function displayDailyTrendChart(dailyCosts, exchangeRate = null) {
     const section = document.getElementById('dailyTrendSection');
+    
+    // dailyCostsByEnvData가 있으면 환경별로 표시
+    if (dailyCostsByEnvData && Object.keys(dailyCostsByEnvData).length > 0) {
+        displayDailyTrendChartByEnv(dailyCostsByEnvData, exchangeRate);
+        return;
+    }
     
     if (!dailyCosts || Object.keys(dailyCosts).length === 0) {
         section.classList.add('hidden');
@@ -738,6 +1233,135 @@ function displayDailyTrendChart(dailyCosts, exchangeRate = null) {
     });
 }
 
+// 환경별 일별 비용 추이 차트 표시 (모든 환경을 한 차트에)
+function displayDailyTrendChartByEnv(dailyCostsByEnv, exchangeRate = null) {
+    const section = document.getElementById('dailyTrendSection');
+    
+    if (!dailyCostsByEnv || Object.keys(dailyCostsByEnv).length === 0) {
+        section.classList.add('hidden');
+        return;
+    }
+    
+    // 환율 저장
+    if (exchangeRate) {
+        dailyTrendExchangeRate = exchangeRate;
+    }
+    
+    section.classList.remove('hidden');
+    
+    const ctx = document.getElementById('dailyTrendChart').getContext('2d');
+    
+    // 기존 차트 제거
+    if (dailyTrendChart) {
+        dailyTrendChart.destroy();
+    }
+    
+    // 모든 환경의 날짜를 수집하여 정렬
+    const allDates = new Set();
+    Object.values(dailyCostsByEnv).forEach(envData => {
+        Object.keys(envData).forEach(date => allDates.add(date));
+    });
+    const sortedDates = Array.from(allDates).sort();
+    
+    // 날짜 포맷 (MM-DD)
+    const labels = sortedDates.map(date => {
+        const parts = date.split('-');
+        return `${parts[1]}-${parts[2]}`;
+    });
+    
+    // 환경별 색상 정의
+    const envColors = {
+        'cielmobility': { border: '#4299e1', background: 'rgba(66, 153, 225, 0.1)' },
+        'smartmobility': { border: '#E57373', background: 'rgba(229, 115, 115, 0.1)' },
+        'Unknown': { border: '#9CA3AF', background: 'rgba(156, 163, 175, 0.1)' }
+    };
+    
+    // 환경별 데이터셋 생성
+    const datasets = [];
+    const environments = Object.keys(dailyCostsByEnv).sort();
+    
+    environments.forEach((env, index) => {
+        const envData = dailyCostsByEnv[env];
+        const costs = sortedDates.map(date => envData[date] || 0);
+        
+        // 색상 결정
+        let colors = envColors[env];
+        if (!colors) {
+            // 기본 색상 팔레트
+            const defaultColors = [
+                { border: '#48BB78', background: 'rgba(72, 187, 120, 0.1)' },
+                { border: '#ED8936', background: 'rgba(237, 137, 54, 0.1)' },
+                { border: '#9F7AEA', background: 'rgba(159, 122, 234, 0.1)' }
+            ];
+            colors = defaultColors[index % defaultColors.length];
+        }
+        
+        datasets.push({
+            label: env,
+            data: costs,
+            borderColor: colors.border,
+            backgroundColor: colors.background,
+            fill: false,
+            tension: 0.3,
+            pointRadius: 4,
+            pointHoverRadius: 6
+        });
+    });
+    
+    dailyTrendChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: datasets
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                intersect: false,
+                mode: 'index'
+            },
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'top',
+                    labels: {
+                        usePointStyle: true,
+                        padding: 15
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const value = context.parsed.y;
+                            const envName = context.dataset.label;
+                            let labelText = `${envName}: $${value.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+                            
+                            // 환율이 설정된 경우 KRW도 표시
+                            if (dailyTrendExchangeRate) {
+                                const krwValue = value * dailyTrendExchangeRate;
+                                labelText += ` (₩${krwValue.toLocaleString(undefined, {maximumFractionDigits: 0})})`;
+                            }
+                            
+                            return labelText;
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return '$' + value.toLocaleString();
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
 // 데이터 로드
 async function loadData(page = 1) {
     currentPage = page;
@@ -784,10 +1408,10 @@ function updateFilterSummary(data) {
     const filterTotalUSD = document.getElementById('filterTotalUSD');
     const filterTotalKRW = document.getElementById('filterTotalKRW');
     
-    // 필터가 적용되었는지 확인
-    const hasFilter = Object.keys(currentFilters).length > 0;
-    
-    if (hasFilter && data.length > 0) {
+    if (data.length > 0) {
+        // 선택된 환경 가져오기
+        const selectedEnv = getSelectedEnvironment();
+        
         // 비용 합계 계산 (비용이 0보다 큰 데이터만)
         let totalUSD = 0;
         let totalKRW = 0;
@@ -795,14 +1419,51 @@ function updateFilterSummary(data) {
         data.forEach(row => {
             const cost = parseFloat(row.cost) || 0;
             const costKrw = parseFloat(row.cost_krw) || 0;
+            
             if (cost > 0) {
                 totalUSD += cost;
                 totalKRW += costKrw;
             }
         });
         
-        filterTotalUSD.textContent = `💵 $${totalUSD.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
-        filterTotalKRW.textContent = `💰 ₩${totalKRW.toLocaleString(undefined, {maximumFractionDigits: 0})}`;
+        // 환경에 따른 표시 로직
+        // - 전체 환경 ('') : 세금계산서 발행 금액 (cielData 총합)
+        // - cielmobility : 씨엘모빌리티 사용 금액 (cielData - segiData)
+        // - smartmobility : 세기모빌리티 청구 금액 (segiData 총합)
+        
+        let displayUSD = totalUSD;
+        let displayKRW = totalKRW;
+        let labelPrefix = '';
+        
+        if (selectedEnv === '') {
+            // 전체 환경 → 세금계산서 발행 금액
+            if (window.summaryCielTotalUSD !== undefined) {
+                displayUSD = window.summaryCielTotalUSD;
+                // KRW 환산
+                const rate = parseFloat(document.getElementById('exchangeRate').value) || 0;
+                displayKRW = displayUSD * rate;
+                labelPrefix = '📄 세금계산서 발행 금액: ';
+            }
+        } else if (selectedEnv.toLowerCase() === 'cielmobility') {
+            // cielmobility → 씨엘모빌리티 사용 금액 (M2 - M1 계산 로직)
+            if (window.summaryCielUsageUSD !== undefined) {
+                displayUSD = window.summaryCielUsageUSD;
+                const rate = parseFloat(document.getElementById('exchangeRate').value) || 0;
+                displayKRW = displayUSD * rate;
+                labelPrefix = '🏢 씨엘모빌리티 사용 금액: ';
+            }
+        } else if (selectedEnv.toLowerCase() === 'smartmobility') {
+            // smartmobility → 세기모빌리티 청구 금액
+            if (window.summarySegiTotalUSD !== undefined) {
+                displayUSD = window.summarySegiTotalUSD;
+                const rate = parseFloat(document.getElementById('exchangeRate').value) || 0;
+                displayKRW = displayUSD * rate;
+                labelPrefix = '📤 세기모빌리티 청구 금액: ';
+            }
+        }
+        
+        filterTotalUSD.textContent = `${labelPrefix}💵 $${displayUSD.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+        filterTotalKRW.textContent = `💰 ₩${displayKRW.toLocaleString(undefined, {maximumFractionDigits: 0})}`;
         filterSummary.style.display = 'block';
     } else {
         filterSummary.style.display = 'none';
@@ -965,7 +1626,7 @@ function displayDataTable(data) {
         html += `
             <div style="border: 2px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
                 <div class="service-header" onclick="toggleService('${serviceId}')" style="
-                    background: #DEE2E6; color: #212529; cursor: pointer;
+                    background: #DEE2E6; color: #495057; cursor: pointer;
                     padding: 12px 15px;
                     display: flex;
                     justify-content: space-between;
@@ -1016,7 +1677,8 @@ function displayDataTable(data) {
             const costKRW = row.cost_krw ? '₩' + parseFloat(row.cost_krw).toLocaleString(undefined, {maximumFractionDigits: 0}) : '-';
             const description = row.description || '-';
             const dateOnly = row.date ? row.date.split(' ')[0] : '-'; // 날짜만 추출 (시간 제거)
-            const envColor = getEnvironmentColor(row.environment || 'default');
+            const envValue = row.environment || 'cielmobility';
+            const envColor = getEnvironmentColor(envValue);
             
             html += `
                 <tr>
@@ -1030,7 +1692,7 @@ function displayDataTable(data) {
                             border-radius: 12px;
                             font-size: 0.85em;
                             display: inline-block;
-                        ">${row.environment || '-'}</span>
+                        ">${envValue}</span>
                     </td>
                     <td style="text-align: right;">${costUSD}</td>
                     <td style="text-align: right;"><strong>${costKRW}</strong></td>
@@ -1061,15 +1723,21 @@ function displayDataTable(data) {
 // 서비스 토글 함수
 function toggleService(serviceId) {
     const details = document.getElementById(serviceId);
-    const iconId = serviceId.replace('service-', 'toggle-icon-');
+    // service-0 또는 date-0 형식 모두 지원
+    let iconId;
+    if (serviceId.startsWith('date-')) {
+        iconId = 'toggle-icon-' + serviceId.replace('date-', '');
+    } else {
+        iconId = serviceId.replace('service-', 'toggle-icon-');
+    }
     const icon = document.getElementById(iconId);
     
     if (details.style.display === 'none') {
         details.style.display = 'block';
-        icon.textContent = '▼';
+        if (icon) icon.textContent = '▼';
     } else {
         details.style.display = 'none';
-        icon.textContent = '▶';
+        if (icon) icon.textContent = '▶';
     }
 }
 
@@ -1225,6 +1893,7 @@ function applyFilters() {
     const environment = getSelectedEnvironment();
     const startDate = document.getElementById('filterDateStart').value;
     const endDate = document.getElementById('filterDateEnd').value;
+    const isDailyChecked = document.getElementById('dailyDataCheckbox').checked;
     
     if (selectedServices.length > 0) currentFilters.services = selectedServices.join(',');
     if (environment) currentFilters.environment = environment;
@@ -1247,7 +1916,17 @@ function applyFilters() {
     // 선택 텍스트 업데이트
     updateServiceDropdownText();
     
-    loadData(1);
+    // 일별 데이터 체크박스 상태에 따라 분기
+    if (isDailyChecked) {
+        // 일별 데이터 모드: 날짜 필수
+        if (!startDate || !endDate) {
+            alert('일별 데이터를 보려면 시작일과 종료일을 모두 선택하세요.');
+            return;
+        }
+        loadDailyData();
+    } else {
+        loadData(1);
+    }
 }
 
 // 필터 초기화
@@ -1260,11 +1939,206 @@ function clearDateFilter() {
     if (allEnvRadio) allEnvRadio.checked = true;
     document.getElementById('environmentDropdownText').textContent = '전체 환경';
     
-    // 날짜 필터 초기화
-    document.getElementById('filterDateStart').value = '';
-    document.getElementById('filterDateEnd').value = '';
+    // 날짜 필터 초기화 (데이터 범위의 시작/종료일로 설정)
+    if (window.summaryDateRange) {
+        const startDate = window.summaryDateRange.start.split(' ')[0];
+        const endDate = window.summaryDateRange.end.split(' ')[0];
+        document.getElementById('filterDateStart').value = startDate;
+        document.getElementById('filterDateEnd').value = endDate;
+    } else {
+        document.getElementById('filterDateStart').value = '';
+        document.getElementById('filterDateEnd').value = '';
+    }
+    
+    // 일별 데이터 체크박스 해제
+    document.getElementById('dailyDataCheckbox').checked = false;
     
     applyFilters();
+}
+
+// 일별 데이터 필터 (날짜별 + 서비스별 합계)
+let isDailyMode = false;
+
+function applyDailyFilter() {
+    const startDate = document.getElementById('filterDateStart').value;
+    const endDate = document.getElementById('filterDateEnd').value;
+    
+    // 날짜 필터 유효성 검사
+    if (!startDate || !endDate) {
+        alert('일별 데이터를 보려면 시작일과 종료일을 모두 선택하세요.');
+        return;
+    }
+    
+    if (endDate < startDate) {
+        alert('종료 일자는 시작 일자와 같거나 이후여야 합니다.');
+        return;
+    }
+    
+    isDailyMode = true;
+    
+    // 기존 필터 적용 후 일별 모드로 데이터 표시
+    currentFilters = {};
+    
+    const selectedServices = getSelectedServices();
+    const environment = getSelectedEnvironment();
+    
+    if (selectedServices.length > 0) currentFilters.services = selectedServices.join(',');
+    if (environment) currentFilters.environment = environment;
+    if (startDate) currentFilters.date_start = startDate;
+    if (endDate) currentFilters.date_end = endDate;
+    
+    // 드롭다운 닫기
+    document.getElementById('serviceDropdownContent').classList.remove('show');
+    document.getElementById('environmentDropdownContent').classList.remove('show');
+    
+    updateServiceDropdownText();
+    
+    loadDailyData();
+}
+
+// 일별 데이터 로드
+async function loadDailyData() {
+    const params = new URLSearchParams({
+        page: 1,
+        per_page: 10000,
+        ...currentFilters
+    });
+    
+    try {
+        const response = await fetch('/api/data?' + params);
+        const result = await response.json();
+        
+        if (result.success) {
+            displayDailyDataTable(result.data);
+            document.getElementById('pagination').innerHTML = '';
+            updateFilterSummary(result.data);
+            document.getElementById('dataSection').classList.remove('hidden');
+        }
+    } catch (error) {
+        console.error('일별 데이터 로드 실패:', error);
+    }
+}
+
+// 일별 데이터 테이블 표시 (날짜별 > 서비스별 그룹화)
+function displayDailyDataTable(data) {
+    const container = document.getElementById('dataTable');
+    
+    if (data.length === 0) {
+        container.innerHTML = '<p style="text-align: center; padding: 40px;">데이터가 없습니다</p>';
+        return;
+    }
+    
+    // 주요 서비스 목록 (나머지는 '기타'로 묶음)
+    const mainServices = ['RDS', 'EC2', 'FSx', 'VPC', 'Elastic Load Balancing', 'Custom Charge'];
+    
+    // 서비스 이름 변환 함수
+    function normalizeServiceName(name) {
+        if (name === 'Elastic Load Balancing') return 'ELB';
+        if (mainServices.includes(name)) return name;
+        return '기타';
+    }
+    
+    // 날짜별로 그룹화 (서비스 정규화 포함)
+    const groupedByDate = {};
+    data.forEach(row => {
+        const dateOnly = row.date ? row.date.split(' ')[0] : 'Unknown';
+        if (!groupedByDate[dateOnly]) {
+            groupedByDate[dateOnly] = {};
+        }
+        
+        const rawService = row.service_name || '기타';
+        const service = normalizeServiceName(rawService);
+        
+        if (!groupedByDate[dateOnly][service]) {
+            groupedByDate[dateOnly][service] = { cost: 0, cost_krw: 0 };
+        }
+        
+        groupedByDate[dateOnly][service].cost += parseFloat(row.cost) || 0;
+        groupedByDate[dateOnly][service].cost_krw += parseFloat(row.cost_krw) || 0;
+    });
+    
+    // 날짜 정렬 (오름차순)
+    const sortedDates = Object.keys(groupedByDate).sort();
+    
+    let html = '<div style="display: flex; flex-direction: column; gap: 15px;">';
+    
+    sortedDates.forEach((dateStr, index) => {
+        const services = groupedByDate[dateStr];
+        const dateId = `date-${index}`;
+        
+        // 해당 날짜의 총합 계산
+        let dateTotalUSD = 0;
+        let dateTotalKRW = 0;
+        
+        Object.values(services).forEach(s => {
+            dateTotalUSD += s.cost;
+            dateTotalKRW += s.cost_krw;
+        });
+        
+        // 비용이 0인 날짜는 표시 안함
+        if (dateTotalUSD === 0) return;
+        
+        // 서비스 개수
+        const serviceCount = Object.keys(services).filter(s => services[s].cost > 0).length;
+        
+        html += `
+            <div style="border: 2px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
+                <div class="service-header" onclick="toggleService('${dateId}')" style="
+                    background: #DEE2E6; color: #495057; cursor: pointer;
+                    padding: 12px 15px;
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    user-select: none;
+                ">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <span id="toggle-icon-${index}" style="font-size: 1.2em;">▶</span>
+                        <strong style="font-size: 1.05em;">📅 ${dateStr}</strong>
+                        <span style="opacity: 0.9; font-size: 0.9em;">(${serviceCount}개 서비스)</span>
+                    </div>
+                    <div style="display: flex; gap: 20px; font-size: 0.95em;">
+                        <span>💵 $${dateTotalUSD.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+                        <span>💰 ₩${dateTotalKRW.toLocaleString(undefined, {maximumFractionDigits: 0})}</span>
+                    </div>
+                </div>
+                <div id="${dateId}" class="service-details" style="display: none;">
+                    <table style="width: 100%; margin: 0; border-radius: 0;">
+                        <thead>
+                            <tr>
+                                <th style="width: 50%;">서비스</th>
+                                <th style="width: 25%; text-align: right;">USD</th>
+                                <th style="width: 25%; text-align: right;">KRW</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+        `;
+        
+        // 서비스별 정렬 (비용 내림차순)
+        const sortedServices = Object.entries(services)
+            .filter(([name, s]) => s.cost > 0)
+            .sort((a, b) => b[1].cost - a[1].cost);
+        
+        sortedServices.forEach(([serviceName, s]) => {
+            html += `
+                <tr>
+                    <td>${serviceName}</td>
+                    <td style="text-align: right;">$${s.cost.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td style="text-align: right;"><strong>₩${s.cost_krw.toLocaleString(undefined, {maximumFractionDigits: 0})}</strong></td>
+                </tr>
+            `;
+        });
+        
+        html += `
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+    });
+    
+    html += '</div>';
+    
+    container.innerHTML = html;
 }
 
 // Excel 다운로드
@@ -1275,6 +2149,7 @@ function exportData() {
 // 로딩 표시
 function showLoading(elementId, message) {
     const el = document.getElementById(elementId);
+    if (!el) return;
     el.className = 'alert alert-info';
     el.innerHTML = `<div class="spinner"></div><p style="margin-top: 15px;">${message}</p>`;
     el.classList.remove('hidden');
@@ -1283,13 +2158,257 @@ function showLoading(elementId, message) {
 // 성공 메시지
 function showSuccess(elementId, message) {
     const el = document.getElementById(elementId);
+    if (!el) return;
     el.className = 'alert alert-success';
     el.innerHTML = `<strong>✓ 성공!</strong> ${message}`;
+    el.classList.remove('hidden');
 }
 
 // 에러 메시지
 function showError(elementId, message) {
     const el = document.getElementById(elementId);
+    if (!el) return;
     el.className = 'alert alert-error';
     el.innerHTML = `<strong>✗ 오류!</strong> ${message}`;
+    el.classList.remove('hidden');
+}
+
+// HTML 저장 버튼 표시
+function showSaveHtmlButton() {
+    const btn = document.getElementById('saveHtmlBtn');
+    if (btn) {
+        btn.style.display = 'inline-block';
+    }
+}
+
+// HTML로 저장
+function saveAsHtml() {
+    // 날짜 범위 추출
+    const dateRange = document.getElementById('summaryDateRange')?.textContent || '';
+    const exchangeRateInfo = document.getElementById('exchangeRateInfo')?.textContent || '';
+    
+    // 요약 그리드 복사
+    const summaryGrid = document.getElementById('summaryGrid');
+    let summaryHtml = summaryGrid ? summaryGrid.outerHTML : '';
+    // (USD / KRW) 텍스트 제거
+    summaryHtml = summaryHtml.replace(/\s*\(USD\s*\/\s*KRW\)/gi, '');
+    
+    // 차트를 이미지로 변환
+    const dailyTrendChart = document.getElementById('dailyTrendChart');
+    let chartImage = '';
+    if (dailyTrendChart) {
+        try {
+            chartImage = dailyTrendChart.toDataURL('image/png');
+        } catch (e) {
+            console.error('차트 이미지 변환 실패:', e);
+        }
+    }
+    
+    // 상세 데이터 복사
+    const dataTable = document.getElementById('dataTable');
+    const dataTableHtml = dataTable ? dataTable.innerHTML : '';
+    
+    // 필터 정보 추출
+    const envText = document.getElementById('environmentDropdownText')?.textContent || '전체 환경';
+    const serviceText = document.getElementById('serviceDropdownText')?.textContent || '전체 서비스';
+    const filterDateStart = document.getElementById('filterDateStart')?.value || '';
+    const filterDateEnd = document.getElementById('filterDateEnd')?.value || '';
+    const filterTotalUSD = document.getElementById('filterTotalUSD')?.textContent || '';
+    const filterTotalKRW = document.getElementById('filterTotalKRW')?.textContent || '';
+    
+    // 필터 정보 문자열 생성
+    let filterInfo = `${envText} / ${serviceText}`;
+    if (filterDateStart && filterDateEnd) {
+        filterInfo += ` / ${filterDateStart} ~ ${filterDateEnd}`;
+    }
+    if (filterTotalUSD && filterTotalKRW) {
+        filterInfo += ` / ${filterTotalUSD.replace('💵 ', '')} / ${filterTotalKRW.replace('💰 ', '')}`;
+    }
+    
+    // HTML 문서 생성
+    const html = `<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AWS 비용 정산 - ${dateRange}</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #F5F6FA;
+            min-height: 100vh;
+            padding: 15px;
+            font-size: 13px;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 15px 45px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        .header {
+            background: #cbd5e0;
+            color: #2d3748;
+            padding: 20px;
+            text-align: center;
+        }
+        .header h1 {
+            font-size: 1.5em;
+            margin-bottom: 8px;
+        }
+        .header p {
+            font-size: 0.95em;
+            opacity: 0.9;
+        }
+        .content {
+            padding: 20px;
+        }
+        .section {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+        .section-title {
+            font-size: 1.15em;
+            color: #2c3e50;
+            margin-bottom: 12px;
+            border-bottom: 2px solid #2c3e50;
+            padding-bottom: 8px;
+        }
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+        }
+        .summary-card {
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .summary-card h3 {
+            font-size: 0.85em;
+            margin-bottom: 8px;
+            color: #2d3748;
+        }
+        .summary-card .value {
+            font-size: 1em;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .chart-section {
+            text-align: center;
+            margin-top: 20px;
+        }
+        .chart-section img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 8px;
+        }
+        .data-section table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9em;
+        }
+        .data-section th, .data-section td {
+            padding: 10px 12px;
+            text-align: left;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .data-section th {
+            background: #f1f5f9;
+            font-weight: 600;
+            color: #475569;
+        }
+        .data-section tr:hover {
+            background: #f8fafc;
+        }
+        .service-header {
+            background: #DEE2E6;
+            color: #495057;
+            padding: 12px 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .footer {
+            text-align: center;
+            padding: 15px;
+            color: #6c757d;
+            font-size: 0.85em;
+            border-top: 1px solid #e9ecef;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>☁️ AWS 비용 정산 보고서</h1>
+            <p>클라우드체커 CSV 파일 기반 비용 분석</p>
+        </div>
+        <div class="content">
+            <div class="section">
+                <h2 class="section-title">
+                    📊 비용 요약
+                    <span style="font-size: 11.7px; font-weight: normal; color: #495057; margin-left: 15px;">${dateRange}</span>
+                    <span style="font-size: 11.7px; font-weight: normal; color: #6c757d; margin-left: 10px;">${exchangeRateInfo}</span>
+                </h2>
+                ${summaryHtml}
+            </div>
+            ${chartImage ? `
+            <div class="section chart-section">
+                <h2 class="section-title">📊 일별 비용 추이</h2>
+                <img src="${chartImage}" alt="일별 비용 추이 차트">
+            </div>
+            ` : ''}
+            ${dataTableHtml ? `
+            <div class="section data-section">
+                <h2 class="section-title">📋 상세 데이터</h2>
+                <div style="background: #f8f9fa; padding: 10px 15px; border-radius: 6px; margin-bottom: 15px; font-size: 0.9em; color: #495057; border: 1px solid #e2e8f0;">
+                    📊 ${filterInfo}
+                </div>
+                ${dataTableHtml}
+            </div>
+            ` : ''}
+        </div>
+        <div class="footer">
+            생성일: ${new Date().toLocaleString('ko-KR')} | AWS 비용 정산 툴
+        </div>
+    </div>
+</body>
+</html>`;
+    
+    // 파일 다운로드
+    const blob = new Blob([html], { type: 'text/html; charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    
+    // 파일명 생성 (날짜 범위에서 추출 + 저장 시간)
+    let fileName = 'AWS_비용정산';
+    const dateMatch = dateRange.match(/\d{4}-\d{2}-\d{2}/g);
+    const now = new Date();
+    const timeStr = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
+    if (dateMatch && dateMatch.length >= 2) {
+        fileName = `AWS_비용정산_${dateMatch[0]}_${dateMatch[1]}_${timeStr}`;
+    } else if (dateMatch && dateMatch.length === 1) {
+        fileName = `AWS_비용정산_${dateMatch[0]}_${timeStr}`;
+    } else {
+        fileName = `AWS_비용정산_${timeStr}`;
+    }
+    
+    a.href = url;
+    a.download = `${fileName}.html`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
 }

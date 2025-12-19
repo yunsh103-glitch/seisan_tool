@@ -26,14 +26,14 @@ class DataConverter:
             StandardCostData: 변환된 표준 데이터 또는 None (변환 실패시)
         """
         try:
-            # 날짜 파싱
+            # 날짜 파싱 - 날짜가 유효하지 않으면 이 행은 건너뜀 (집계 섹션 등)
             date_value = None
             if 'date' in row.index:
                 date_value = self.parser.parse_date(row['date'])
             
             if not date_value:
-                # 날짜가 없으면 현재 날짜 사용
-                date_value = datetime.now()
+                # 날짜가 없거나 파싱 실패하면 이 행은 건너뜀 (집계 섹션일 가능성)
+                return None
             
             # 비용 정리
             cost = 0.0
@@ -42,6 +42,13 @@ class DataConverter:
             
             # 태그 추출
             tags = self.parser.extract_tags_from_columns(row)
+            
+            # environment 정규화 (파서에서 이미 처리되지만 이중 확인)
+            environment = tags.get('environment')
+            if not environment or (isinstance(environment, str) and environment.strip() == ''):
+                environment = 'cielmobility'
+            elif environment in ['dev-smartmobility', 'prd-smartmobility']:
+                environment = 'smartmobility'
             
             # Description에서 리전 정보 추출
             region = row.get('region') if not pd.isna(row.get('region')) else None
@@ -61,7 +68,7 @@ class DataConverter:
                 currency='USD',
                 department=tags.get('department'),
                 project=tags.get('project'),
-                environment=tags.get('environment'),
+                environment=environment,
                 cost_center=tags.get('cost_center'),
                 usage_type=row.get('usage_type') if not pd.isna(row.get('usage_type')) else None,
                 usage_amount=float(row.get('usage_amount', 0)) if not pd.isna(row.get('usage_amount')) else None,

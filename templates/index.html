@@ -133,6 +133,15 @@
             width: 100%;
             max-width: 280px;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: #495057;
+        }
+        
+        /* 날짜 입력 필드 내부 색상 통일 */
+        input[type="date"]::-webkit-datetime-edit-day-field,
+        input[type="date"]::-webkit-datetime-edit-month-field,
+        input[type="date"]::-webkit-datetime-edit-year-field,
+        input[type="date"]::-webkit-datetime-edit-text {
+            color: #495057;
         }
         
         input[type="number"]:focus,
@@ -156,7 +165,7 @@
         
         .summary-grid {
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
+            grid-template-columns: repeat(2, 1fr);
             gap: 15px;
             margin-top: 15px;
         }
@@ -256,9 +265,9 @@
         }
         
         .alert-success {
-            background: #d4edda;
-            border-left: 4px solid #155724;
-            color: #155724;
+            background: #E9ECEF;
+            border-left: 4px solid #6C757D;
+            color: #6C757D;
         }
         
         .alert-error {
@@ -458,18 +467,41 @@
         </div>
         
         <div class="content">
-            <!-- 1. 파일 업로드 섹션 -->
+            <!-- 1. 파일 업로드 섹션 - 두 개의 업로드 창구 -->
             <div class="section">
                 <h2 class="section-title">📁 1단계: CSV 파일 업로드</h2>
-                <div class="upload-area" id="uploadArea">
-                    <p style="font-size: 2.5em; margin-bottom: 8px;">📄</p>
-                    <p style="font-size: 1em; margin-bottom: 8px;">클라우드체커 CSV 파일을 드래그하거나 클릭하세요 (여러 파일 선택 가능)</p>
-                    <input type="file" id="fileInput" accept=".csv" multiple style="display: none;">
-                    <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">
-                        파일 선택
-                    </button>
+                <p style="color: #6c757d; margin-bottom: 15px; font-size: 11.7px;">씨엘모빌리티와 세기모빌리티 청구 파일을 각각 업로드하세요. 두 파일 모두 업로드하면 차액이 자동 계산됩니다.</p>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                    <!-- 씨엘모빌리티 업로드 -->
+                    <div style="background: #F2F4FF; padding: 15px; border-radius: 8px; border: 2px solid #4299e1;">
+                        <h3 style="color: #2b6cb0; margin-bottom: 12px; font-size: 1em;">🏢 세금계산서 발행 금액(매입)</h3>
+                        <p style="color: #4a5568; font-size: 0.8em; margin-bottom: 10px;">스마일샤크 → 씨엘모빌리티 청구 파일</p>
+                        <div class="upload-area" id="uploadAreaCiel" style="border-color: #4299e1; min-height: 100px;">
+                            <p style="font-size: 1.8em; margin-bottom: 5px;">📄</p>
+                            <p style="font-size: 0.85em; margin-bottom: 8px; color: #4a5568;">CSV 파일을 드래그하거나 선택</p>
+                            <input type="file" id="fileInputCiel" accept=".csv" multiple style="display: none;">
+                            <button class="btn" style="background: #4299e1; color: white; padding: 6px 16px;" onclick="document.getElementById('fileInputCiel').click()">
+                                파일 선택
+                            </button>
+                        </div>
+                        <div id="uploadStatusCiel" class="hidden" style="margin-top: 10px; font-size: 0.85em;"></div>
+                    </div>
+                    
+                    <!-- 세기모빌리티 업로드 -->
+                    <div style="background: #FFEFEF; padding: 15px; border-radius: 8px; border: 2px solid #E57373;">
+                        <h3 style="color: #E57373; margin-bottom: 12px; font-size: 1em;">🚗 세기모빌리티 청구 금액(매출)</h3>
+                        <p style="color: #4a5568; font-size: 0.8em; margin-bottom: 10px;">씨엘모빌리티 → 세기모빌리티 청구 파일</p>
+                        <div class="upload-area" id="uploadAreaSegi" style="border-color: #E57373; min-height: 100px;">
+                            <p style="font-size: 1.8em; margin-bottom: 5px;">📄</p>
+                            <p style="font-size: 0.85em; margin-bottom: 8px; color: #4a5568;">CSV 파일을 드래그하거나 선택</p>
+                            <input type="file" id="fileInputSegi" accept=".csv" multiple style="display: none;">
+                            <button class="btn" style="background: #E57373; color: white; padding: 6px 16px;" onclick="document.getElementById('fileInputSegi').click()">
+                                파일 선택
+                            </button>
+                        </div>
+                        <div id="uploadStatusSegi" class="hidden" style="margin-top: 10px; font-size: 0.85em;"></div>
+                    </div>
                 </div>
-                <div id="uploadStatus" class="hidden" style="margin-top: 15px;"></div>
             </div>
             
             <!-- 2. 환율 설정 섹션 -->
@@ -504,21 +536,17 @@
                 </div>
             </div>
             
-            <!-- 3. 요약 정보 -->
+            <!-- 3. 비용 요약 (통합) -->
             <div class="section hidden" id="summarySection">
-                <h2 class="section-title">📊 비용 요약 <span id="exchangeRateInfo" style="font-size: 11.7px; font-weight: normal; color: #6c757d; margin-left: 10px;"></span></h2>
+                <h2 class="section-title">
+                    📊 비용 요약
+                    <span id="summaryDateRange" style="font-size: 11.7px; font-weight: normal; color: #495057; margin-left: 15px;"></span>
+                    <span id="exchangeRateInfo" style="font-size: 11.7px; font-weight: normal; color: #6c757d; margin-left: 10px;"></span>
+                </h2>
                 <div class="summary-grid" id="summaryGrid"></div>
             </div>
             
-            <!-- 4. 서비스별 차트 -->
-            <div class="section hidden" id="chartSection">
-                <h2 class="section-title">📈 서비스별 비용</h2>
-                <div class="chart-container">
-                    <canvas id="serviceChart"></canvas>
-                </div>
-            </div>
-            
-            <!-- 5. 일별 비용 추이 -->
+            <!-- 4. 일별 비용 추이 -->
             <div class="section hidden" id="dailyTrendSection">
                 <h2 class="section-title">📊 일별 비용 추이</h2>
                 <div style="margin-bottom: 15px;">
@@ -536,6 +564,16 @@
                 <h2 class="section-title">📋 상세 데이터</h2>
                 
                 <div class="filter-bar" style="align-items: center;">
+                    <!-- 환경 드롭다운 -->
+                    <div class="dropdown-check" id="environmentDropdown">
+                        <div class="dropdown-check-btn" onclick="toggleEnvironmentDropdown()">
+                            <span id="environmentDropdownText">전체 환경</span>
+                            <span>▼</span>
+                        </div>
+                        <div class="dropdown-check-content" id="environmentDropdownContent">
+                            <div id="environmentRadioList"></div>
+                        </div>
+                    </div>
                     <!-- 서비스 드롭다운 체크박스 -->
                     <div class="dropdown-check" id="serviceDropdown">
                         <div class="dropdown-check-btn" onclick="toggleServiceDropdown()">
@@ -550,21 +588,15 @@
                             <div id="serviceCheckboxList"></div>
                         </div>
                     </div>
-                    <!-- 환경 드롭다운 -->
-                    <div class="dropdown-check" id="environmentDropdown">
-                        <div class="dropdown-check-btn" onclick="toggleEnvironmentDropdown()">
-                            <span id="environmentDropdownText">전체 환경</span>
-                            <span>▼</span>
-                        </div>
-                        <div class="dropdown-check-content" id="environmentDropdownContent">
-                            <div id="environmentRadioList"></div>
-                        </div>
-                    </div>
                     <div style="display: flex; align-items: center; gap: 5px;">
                         <span style="font-size: 0.9em; color: #495057;">📅</span>
                         <input type="date" id="filterDateStart" style="width: 130px; height: 34px;">
                         <span style="color: #6c757d;">~</span>
                         <input type="date" id="filterDateEnd" style="width: 130px; height: 34px;">
+                        <label style="display: flex; align-items: center; gap: 5px; cursor: pointer; font-size: 0.9em; color: #495057; white-space: nowrap;">
+                            <input type="checkbox" id="dailyDataCheckbox" style="width: 16px; height: 16px; cursor: pointer;">
+                            일별 데이터
+                        </label>
                         <button class="btn" onclick="applyFilters()" style="height: 34px; padding: 6px 20px; font-size: 0.85em; background: #495057; color: white; white-space: nowrap;">적용</button>
                         <button class="btn" onclick="clearDateFilter()" style="height: 34px; padding: 6px 20px; font-size: 0.85em; background: #6c757d; color: white; white-space: nowrap;">초기화</button>
                     </div>
@@ -572,11 +604,11 @@
                 
                 <!-- 필터 적용 시 합계 표시 -->
                 <div id="filterSummary" style="display: none; background: #f8f9fa; padding: 12px 15px; border-radius: 8px; margin-top: 10px; border: 1px solid #e2e8f0;">
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
                         <span style="color: #495057; font-size: 0.9em;">📊 필터 적용 결과</span>
-                        <div style="display: flex; gap: 20px; font-size: 0.95em;">
-                            <span id="filterTotalUSD" style="color: #212529; font-weight: 600;">💵 $0.00</span>
-                            <span id="filterTotalKRW" style="color: #212529; font-weight: 600;">💰 ₩0</span>
+                        <div style="display: flex; gap: 20px; font-size: 0.95em; flex-wrap: wrap;">
+                            <span id="filterTotalUSD" style="color: #495057; font-weight: 600;">💵 $0.00</span>
+                            <span id="filterTotalKRW" style="color: #495057; font-weight: 600;">💰 ₩0</span>
                         </div>
                     </div>
                 </div>
@@ -665,6 +697,38 @@
         </div>
     </div>
     
+    <!-- HTML 저장 버튼 (플로팅) -->
+    <button id="saveHtmlBtn" onclick="saveAsHtml()" title="HTML로 저장" style="
+        display: none;
+        position: fixed;
+        top: 20px;
+        right: 30px;
+        width: 50px;
+        height: 50px;
+        background: linear-gradient(135deg, #38a169 0%, #2f855a 100%);
+        border: none;
+        border-radius: 50%;
+        cursor: pointer;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        z-index: 1000;
+        transition: all 0.3s ease;
+        padding: 0;
+    ">
+        <svg viewBox="0 0 24 24" width="24" height="24" style="
+            fill: none;
+            stroke: white;
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            display: block;
+            margin: auto;
+        ">
+            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+            <polyline points="17 21 17 13 7 13 7 21"></polyline>
+            <polyline points="7 3 7 8 15 8"></polyline>
+        </svg>
+    </button>
+    
     <!-- 페이지 최상단 이동 버튼 -->
     <button id="scrollTopBtn" onclick="scrollToTop()" title="맨 위로" style="
         display: none;
@@ -726,6 +790,17 @@
         });
         scrollTopBtn.addEventListener('mouseleave', function() {
             this.style.background = '#495057';
+            this.style.transform = 'scale(1)';
+        });
+        
+        // 저장 버튼 호버 효과
+        const saveHtmlBtn = document.getElementById('saveHtmlBtn');
+        saveHtmlBtn.addEventListener('mouseenter', function() {
+            this.style.background = 'linear-gradient(135deg, #2f855a 0%, #276749 100%)';
+            this.style.transform = 'scale(1.1)';
+        });
+        saveHtmlBtn.addEventListener('mouseleave', function() {
+            this.style.background = 'linear-gradient(135deg, #38a169 0%, #2f855a 100%)';
             this.style.transform = 'scale(1)';
         });
     </script>

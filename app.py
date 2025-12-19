@@ -25,6 +25,47 @@ converter = None
 current_data = None
 current_df = None
 
+# 두 파일의 데이터를 각각 저장
+ciel_data_list = None  # 씨엘모빌리티 파일 데이터
+segi_data_list = None  # 세기모빌리티 파일 데이터
+combined_data_list = None  # 합쳐진 데이터
+combined_df = None  # 합쳐진 DataFrame
+
+
+def calculate_msp_costs(non_custom_charge_usd):
+    """
+    MSP 비용 계산
+    
+    - cielmobility 환경에서 Custom Charge를 제외한 금액 기준
+    - $20,000 미만: M2 = 20%, M1 = $1,000
+    - $20,000 이상: M2 = 20%, M1 = 5%
+    - 씨엘모빌리티 사용 MSP = M2 - M1
+    """
+    THRESHOLD = 20000.0
+    M2_RATE = 0.20  # 20%
+    M1_FIXED = 1000.0  # $1,000
+    M1_RATE = 0.05  # 5%
+    
+    # M2: 항상 20%
+    msp_invoice_amount = non_custom_charge_usd * M2_RATE
+    
+    # M1: 임계값에 따라 결정
+    if non_custom_charge_usd < THRESHOLD:
+        msp_segi_amount = M1_FIXED
+    else:
+        msp_segi_amount = non_custom_charge_usd * M1_RATE
+    
+    # 씨엘모빌리티 사용 MSP = M2 - M1
+    msp_ciel_usage = msp_invoice_amount - msp_segi_amount
+    
+    return {
+        'threshold': THRESHOLD,
+        'is_over_threshold': non_custom_charge_usd >= THRESHOLD,
+        'msp_invoice_amount': round(msp_invoice_amount, 2),  # M2: 세금계산서 발행 MSP
+        'msp_segi_amount': round(msp_segi_amount, 2),  # M1: 세기모빌리티 MSP
+        'msp_ciel_usage': round(msp_ciel_usage, 2)  # 씨엘모빌리티 사용 MSP
+    }
+
 
 @app.route('/')
 def index():
@@ -35,12 +76,15 @@ def index():
 @app.route('/api/upload', methods=['POST'])
 def upload_file():
     """CSV 파일 업로드 (다중 파일 지원)"""
-    global converter, current_data, current_df
+    global converter, current_data, current_df, ciel_data_list, segi_data_list, combined_data_list, combined_df
     
     if 'files' not in request.files:
         return jsonify({'error': '파일이 없습니다'}), 400
     
     files = request.files.getlist('files')
+    # 'data_type' 또는 'upload_type' 둘 다 지원 (프론트엔드에서 data_type을 사용함)
+    upload_type = request.form.get('data_type') or request.form.get('upload_type', 'ciel')  # 'ciel' 또는 'segi'
+    print(f"[DEBUG] upload_type: {upload_type}")
     
     if not files or len(files) == 0:
         return jsonify({'error': '파일이 선택되지 않았습니다'}), 400
@@ -75,62 +119,102 @@ def upload_file():
         if len(all_data) == 0:
             return jsonify({'error': '유효한 데이터가 없습니다'}), 400
         
-        # 중복 제거: 날짜, 서비스, 설명, 환경, 비용이 모두 같은 경우
-        print(f"[중복 검사] 총 {len(all_data)}개 레코드 검사 시작")
+        # 중복 제거 비활성화 - CloudCheckr CSV는 같은 조건의 별개 레코드가 있을 수 있음
+        # 같은 날짜, 서비스, 설명, 환경, 비용이라도 별개의 리소스/사용량일 수 있음
+        print(f"[데이터 검사] 총 {len(all_data)}개 레코드")
         duplicates_info['total'] = len(all_data)
+        duplicates_info['removed'] = 0
         
-        seen = set()
-        unique_data = []
+        # 중복 제거 없이 모든 데이터 사용
+        unique_data = all_data
         
-        for item in all_data:
-            # 고유 키 생성: 날짜, 서비스, 설명, 환경, 비용
-            key = (
-                str(item.date),
-                item.service_name,
-                item.description,
-                item.environment,
-                float(item.cost)
-            )
-            
-            if key not in seen:
-                seen.add(key)
-                unique_data.append(item)
-            else:
-                duplicates_info['removed'] += 1
+        print(f"[데이터 검사] 최종: {len(unique_data)}건 (중복 제거 비활성화됨)")
         
-        print(f"[중복 검사] 중복 제거: {duplicates_info['removed']}건, 최종: {len(unique_data)}건")
+        # 환경값 정규화 전 확인
+        env_before = set(item.environment for item in unique_data)
+        print(f"[DEBUG] 정규화 전 환경값들: {env_before}")
         
-        # 환경값 정규화: dev-smartmobility, prd-smartmobility -> smartmobility
+        # 환경값 정규화
         for item in unique_data:
-            if item.environment in ['dev-smartmobility', 'prd-smartmobility']:
+            # environment가 없거나 빈 값이면 cielmobility로 설정
+            if not item.environment or (isinstance(item.environment, str) and item.environment.strip() == ''):
+                item.environment = 'cielmobility'
+            # dev-smartmobility, prd-smartmobility -> smartmobility
+            elif item.environment in ['dev-smartmobility', 'prd-smartmobility']:
                 item.environment = 'smartmobility'
         
-        # 전체 데이터 저장 (중복 제거된 데이터)
-        current_data = unique_data
+        # 환경값 정규화 후 확인
+        env_after = set(item.environment for item in unique_data)
+        print(f"[DEBUG] 정규화 후 환경값들: {env_after}")
         
-        # DataFrame 생성 (환율 적용 전)
+        # upload_type에 따라 데이터 저장
+        if upload_type == 'segi':
+            segi_data_list = unique_data
+            print(f"[DEBUG] 세기모빌리티 데이터 저장: {len(unique_data)}건")
+        else:
+            ciel_data_list = unique_data
+            print(f"[DEBUG] 씨엘모빌리티 데이터 저장: {len(unique_data)}건")
+        
+        # 두 파일이 모두 있으면 합치기
+        if ciel_data_list and segi_data_list:
+            # 두 데이터를 합침
+            all_combined = ciel_data_list + segi_data_list
+            
+            # 중복 제거
+            seen = set()
+            combined_unique = []
+            for item in all_combined:
+                key = (
+                    str(item.date),
+                    item.service_name,
+                    item.description,
+                    item.environment,
+                    float(item.cost)
+                )
+                if key not in seen:
+                    seen.add(key)
+                    combined_unique.append(item)
+            
+            combined_data_list = combined_unique
+            print(f"[DEBUG] 합쳐진 데이터: {len(combined_data_list)}건")
+            # 합쳐진 데이터를 사용
+            current_data = combined_data_list
+        else:
+            # 하나의 파일만 업로드된 경우
+            current_data = unique_data
+        
+        # DataFrame 생성 (환율 적용 전) - 합쳐진 데이터 기준
         current_df = converter.to_dataframe(current_data)
+        combined_df = current_df  # API에서 사용할 수 있도록
         
-        # 요약 정보
-        summary = converter.get_summary_stats(current_data)
+        # 요약 정보 - 현재 업로드한 파일의 데이터만 기준으로 계산
+        summary = converter.get_summary_stats(unique_data)
         
         # 성공 메시지에 중복 제거 정보 포함
-        message = f'{len(uploaded_files)}개 파일, 총 {len(current_data)}개 레코드 업로드 완료'
+        message = f'{len(uploaded_files)}개 파일, 총 {len(unique_data)}개 레코드 업로드 완료'
         if duplicates_info['removed'] > 0:
             message += f' (중복 {duplicates_info["removed"]}건 제거됨)'
         
-        # 일별 비용 집계
+        # 일별 비용 집계 (Custom Charge 제외) - 현재 업로드한 파일 기준
         daily_costs = {}
-        for item in current_data:
+        for item in unique_data:
+            service_name = (item.service_name or '').lower()
+            # Custom Charge는 일별 비용에서 제외
+            if 'custom charge' in service_name:
+                continue
             date_str = str(item.date)[:10]  # YYYY-MM-DD
             if date_str not in daily_costs:
                 daily_costs[date_str] = 0
             daily_costs[date_str] += float(item.cost)
         
-        # 환경별 일별 비용 집계
+        # 환경별 일별 비용 집계 (Custom Charge 제외) - 현재 업로드한 파일 기준
         daily_costs_by_env = {}
         environments = set()
-        for item in current_data:
+        for item in unique_data:
+            service_name = (item.service_name or '').lower()
+            # Custom Charge는 일별 비용에서 제외
+            if 'custom charge' in service_name:
+                continue
             env = item.environment or 'Unknown'
             environments.add(env)
             date_str = str(item.date)[:10]
@@ -141,6 +225,35 @@ def upload_file():
                 daily_costs_by_env[env][date_str] = 0
             daily_costs_by_env[env][date_str] += float(item.cost)
         
+        # 환경별 총 비용 계산 - 현재 업로드한 파일 기준
+        # smartmobility가 포함된 데이터가 있는지 확인
+        has_smartmobility = any('smartmobility' in (item.environment or '').lower() for item in unique_data)
+        
+        cielmobility_usd = 0
+        smartmobility_usd = 0
+        
+        # MSP 계산용 변수 (cielmobility 환경에서)
+        custom_charge_usd = 0  # Custom Charge 금액
+        non_custom_charge_usd = 0  # Custom Charge 외 금액
+        
+        for item in unique_data:
+            env = (item.environment or '').lower()
+            cost = float(item.cost)
+            service_name = (item.service_name or '').lower()
+            
+            if 'smartmobility' in env:
+                smartmobility_usd += cost
+            else:
+                cielmobility_usd += cost
+                # cielmobility 환경에서 Custom Charge 구분
+                if 'custom charge' in service_name:
+                    custom_charge_usd += cost
+                else:
+                    non_custom_charge_usd += cost
+        
+        # MSP 비용 계산 (cielmobility 환경 기준)
+        msp_info = calculate_msp_costs(non_custom_charge_usd)
+        
         return jsonify({
             'success': True,
             'message': message,
@@ -149,6 +262,12 @@ def upload_file():
             'summary': {
                 'total_records': summary['total_records'],
                 'total_cost_usd': float(summary['total_cost']),
+                'cielmobility_usd': cielmobility_usd,
+                'smartmobility_usd': smartmobility_usd,
+                'has_smartmobility': has_smartmobility,
+                'custom_charge_usd': custom_charge_usd,
+                'non_custom_charge_usd': non_custom_charge_usd,
+                'msp_info': msp_info,
                 'date_range': {
                     'start': str(summary['date_range']['start']),
                     'end': str(summary['date_range']['end'])
@@ -376,13 +495,16 @@ def get_data():
         # JSON 변환
         records = df_page.to_dict('records')
         
-        # datetime/date를 문자열로 변환
+        # datetime/date를 문자열로 변환 및 environment 기본값 설정
         for record in records:
             for key, value in record.items():
                 if isinstance(value, (datetime, date)):
                     record[key] = str(value)
                 elif pd.isna(value):
                     record[key] = None
+            # environment가 비어있으면 cielmobility로 설정
+            if not record.get('environment') or (isinstance(record.get('environment'), str) and record['environment'].strip() == ''):
+                record['environment'] = 'cielmobility'
         
         return jsonify({
             'success': True,
@@ -416,11 +538,34 @@ def get_summary():
             'cost_krw': 'sum' if 'cost_krw' in df.columns else 'sum'
         }).to_dict('index')
         
-        # 환경별 집계
-        env_summary = df.groupby('environment').agg({
+        # 환경별 집계 (environment가 빈 값이면 cielmobility로 처리)
+        df_env = df.copy()
+        df_env['environment'] = df_env['environment'].fillna('cielmobility')
+        df_env['environment'] = df_env['environment'].replace('', 'cielmobility')
+        
+        env_summary = df_env.groupby('environment').agg({
             'cost': 'sum',
-            'cost_krw': 'sum' if 'cost_krw' in df.columns else 'sum'
+            'cost_krw': 'sum' if 'cost_krw' in df_env.columns else 'sum'
         }).to_dict('index')
+        
+        # MSP 계산 (cielmobility 환경 기준)
+        custom_charge_usd = 0.0
+        non_custom_charge_usd = 0.0
+        
+        for idx, row in df_env.iterrows():
+            env = (row.get('environment') or '').lower()
+            service = (row.get('service_name') or '').lower()
+            cost = float(row.get('cost', 0))
+            
+            if 'smartmobility' not in env:  # cielmobility 환경
+                if 'custom charge' in service:
+                    custom_charge_usd += cost
+                else:
+                    non_custom_charge_usd += cost
+        
+        msp_info = calculate_msp_costs(non_custom_charge_usd)
+        msp_info['custom_charge_usd'] = round(custom_charge_usd, 2)
+        msp_info['non_custom_charge_usd'] = round(non_custom_charge_usd, 2)
         
         # 프로젝트별 집계
         project_summary = {}
@@ -440,7 +585,8 @@ def get_summary():
                 },
                 'by_service': service_summary,
                 'by_environment': env_summary,
-                'by_project': project_summary
+                'by_project': project_summary,
+                'msp_info': msp_info
             }
         })
     
