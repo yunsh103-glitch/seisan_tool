@@ -2396,13 +2396,14 @@ function saveAsHtml() {
     let fileName = 'AWS_비용정산';
     const dateMatch = dateRange.match(/\d{4}-\d{2}-\d{2}/g);
     const now = new Date();
+    const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
     const timeStr = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
     if (dateMatch && dateMatch.length >= 2) {
-        fileName = `AWS_비용정산_${dateMatch[0]}_${dateMatch[1]}_${timeStr}`;
+        fileName = `AWS_비용정산_${dateMatch[0]}_${dateMatch[1]}_${dateStr}_${timeStr}`;
     } else if (dateMatch && dateMatch.length === 1) {
-        fileName = `AWS_비용정산_${dateMatch[0]}_${timeStr}`;
+        fileName = `AWS_비용정산_${dateMatch[0]}_${dateStr}_${timeStr}`;
     } else {
-        fileName = `AWS_비용정산_${timeStr}`;
+        fileName = `AWS_비용정산_${dateStr}_${timeStr}`;
     }
     
     a.href = url;
