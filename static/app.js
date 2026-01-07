@@ -4,6 +4,7 @@ let currentFilters = {};
 let uploadedData = null;
 let dailyCostsData = null; // 전체 일별 비용
 let dailyCostsByEnvData = null; // 환경별 일별 비용
+let allDataCache = null; // 전체 데이터 캐시 (필터용)
 
 // 이중 업로드 시스템용 전역 변수
 let cielData = null; // 씨엘모빌리티 데이터 (스마일샤크 → 씨엘모빌리티)
@@ -413,30 +414,43 @@ function displayCombinedSummary() {
     const segiSummary = segiData.summary;
     const segiTotalUSD = segiSummary.total_cost_usd || 0;
     
-    // MSP 정보 (씨엘모빌리티 데이터에서)
-    const mspInfo = cielSummary.msp_info || null;
+    // MSP 정보 (씨엘모빌리티 데이터에서 M2, 세기모빌리티 데이터에서 M1)
+    const cielMspInfo = cielSummary.msp_info || null;
+    const segiMspInfo = segiSummary.msp_info || null;
     const customChargeUSD = cielSummary.custom_charge_usd || 0;
     const nonCustomChargeUSD = cielSummary.non_custom_charge_usd || 0;
+    const segiNonCustomChargeUSD = segiSummary.non_custom_charge_usd || 0;
     
-    console.log('MSP Info:', mspInfo);
+    console.log('Ciel MSP Info:', cielMspInfo);
+    console.log('Segi MSP Info:', segiMspInfo);
     console.log('Custom Charge USD:', customChargeUSD);
-    console.log('Non Custom Charge USD:', nonCustomChargeUSD);
+    console.log('Ciel Non Custom Charge USD:', nonCustomChargeUSD);
+    console.log('Segi Non Custom Charge USD:', segiNonCustomChargeUSD);
     
-    // MSP 금액
-    const m2Amount = mspInfo ? mspInfo.msp_invoice_amount : 0;  // M2 (20%)
-    const m1Amount = mspInfo ? mspInfo.msp_segi_amount : 0;     // M1 (세기모빌리티 MSP)
-    const cielMspAmount = mspInfo ? mspInfo.msp_ciel_usage : 0; // M2 - M1 (씨엘모빌리티 사용 MSP)
+    // MSP 금액 - M1, M2 모두 씨엘 파일의 non_custom_charge(AWS 사용료) 기준으로 계산
+    // M2: 씨엘모빌리티 파일의 AWS 사용료 * 20%
+    const m2Amount = cielMspInfo ? cielMspInfo.msp_invoice_amount : 0;
+    // M1: 씨엘모빌리티 파일의 AWS 사용료 기준으로 계산 ($20,000 미만=$1,000, 이상=5%)
+    const m1Amount = cielMspInfo ? cielMspInfo.msp_segi_amount : 0;
+    // 씨엘모빌리티 사용 MSP = M2 - M1
+    const cielMspAmount = m2Amount - m1Amount;
     
-    // 차액 계산 (씨엘모빌리티 사용 금액 = 세금계산서 발행 금액 - 세기모빌리티 청구 금액)
-    const cielUsageUSD = cielTotalUSD - segiTotalUSD;
+    // 세기모빌리티 청구 금액 = 세기 파일 총액 + M1
+    const segiChargeUSD = segiTotalUSD + m1Amount;
+    
+    // 씨엘모빌리티 사용 금액 = 씨엘 파일 총액 - 세기모빌리티 청구 금액
+    const cielUsageUSD = cielTotalUSD - segiChargeUSD;
     
     // 전역 변수 저장
     window.summaryCielTotalUSD = cielTotalUSD;
     window.summarySegiTotalUSD = segiTotalUSD;
+    window.summarySegiChargeUSD = segiChargeUSD;
     window.summaryCielUsageUSD = cielUsageUSD;
     window.summaryCielDateRange = { start: cielStartDate, end: cielEndDate };
-    window.summaryMspInfo = mspInfo;
+    window.summaryCielMspInfo = cielMspInfo;
+    window.summarySegiMspInfo = segiMspInfo;
     window.summaryNonCustomChargeUSD = nonCustomChargeUSD;
+    window.summarySegiNonCustomChargeUSD = segiNonCustomChargeUSD;
     window.summaryM2Amount = m2Amount;
     window.summaryM1Amount = m1Amount;
     window.summaryCielMspAmount = cielMspAmount;
@@ -472,7 +486,7 @@ function displayCombinedSummary() {
         <div class="summary-card" style="background: #FFEFEF;">
             <h3>📤 세기모빌리티 청구 금액(매출) (USD / KRW)</h3>
             <div class="value" style="color: #E57373;">
-                <span>$${segiTotalUSD.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                <span>$${segiChargeUSD.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
                 <span style="color: #6c757d; margin: 0 8px;">/</span>
                 <span id="segiKrwValue">-</span>
             </div>
@@ -903,10 +917,10 @@ function updateSummaryWithKRW(summary) {
             cielKrwValue.style.color = '#212529';
         }
         
-        // 세기모빌리티 KRW 값 업데이트 (보라색 강조 유지)
+        // 세기모빌리티 KRW 값 업데이트 (세기 파일 총액 + M1)
         const segiKrwValue = document.getElementById('segiKrwValue');
-        if (segiKrwValue && window.summarySegiTotalUSD) {
-            const segiKRW = window.summarySegiTotalUSD * rate;
+        if (segiKrwValue && window.summarySegiChargeUSD !== undefined) {
+            const segiKRW = window.summarySegiChargeUSD * rate;
             segiKrwValue.textContent = `₩${segiKRW.toLocaleString(undefined, {maximumFractionDigits: 0})}`;
             segiKrwValue.style.color = '#E57373';
         }
@@ -920,27 +934,25 @@ function updateSummaryWithKRW(summary) {
         }
         
         // MSP 금액 KRW 값 업데이트
-        if (window.summaryMspInfo) {
-            const mspInfo = window.summaryMspInfo;
-            
-            // M2 (세금계산서 발행 MSP)
+        if (window.summaryCielMspInfo || window.summarySegiMspInfo) {
+            // M2 (세금계산서 발행 MSP) - 씨엘모빌리티 데이터 기준
             const m2KrwValue = document.getElementById('m2KrwValue');
-            if (m2KrwValue) {
-                const m2KRW = mspInfo.msp_invoice_amount * rate;
+            if (m2KrwValue && window.summaryM2Amount !== undefined) {
+                const m2KRW = window.summaryM2Amount * rate;
                 m2KrwValue.textContent = `₩${m2KRW.toLocaleString(undefined, {maximumFractionDigits: 0})}`;
             }
             
-            // M1 (세기모빌리티 MSP)
+            // M1 (세기모빌리티 MSP) - 세기모빌리티 데이터 기준
             const m1KrwValue = document.getElementById('m1KrwValue');
-            if (m1KrwValue) {
-                const m1KRW = mspInfo.msp_segi_amount * rate;
+            if (m1KrwValue && window.summaryM1Amount !== undefined) {
+                const m1KRW = window.summaryM1Amount * rate;
                 m1KrwValue.textContent = `₩${m1KRW.toLocaleString(undefined, {maximumFractionDigits: 0})}`;
             }
             
             // 씨엘모빌리티 사용 MSP (M2 - M1)
             const cielMspKrwValue = document.getElementById('cielMspKrwValue');
-            if (cielMspKrwValue) {
-                const cielMspKRW = mspInfo.msp_ciel_usage * rate;
+            if (cielMspKrwValue && window.summaryCielMspAmount !== undefined) {
+                const cielMspKRW = window.summaryCielMspAmount * rate;
                 cielMspKrwValue.textContent = `₩${cielMspKRW.toLocaleString(undefined, {maximumFractionDigits: 0})}`;
             }
         }
@@ -1445,7 +1457,8 @@ function updateFilterSummary(data) {
                 labelPrefix = '📄 세금계산서 발행 금액: ';
             }
         } else if (selectedEnv.toLowerCase() === 'cielmobility') {
-            // cielmobility → 씨엘모빌리티 사용 금액 (M2 - M1 계산 로직)
+            // cielmobility → 씨엘모빌리티 사용 금액 (씨엘 파일 총액 - 세기모빌리티 청구 금액)
+            // custom charge 포함하여 계산
             if (window.summaryCielUsageUSD !== undefined) {
                 displayUSD = window.summaryCielUsageUSD;
                 const rate = parseFloat(document.getElementById('exchangeRate').value) || 0;
@@ -1453,9 +1466,9 @@ function updateFilterSummary(data) {
                 labelPrefix = '🏢 씨엘모빌리티 사용 금액: ';
             }
         } else if (selectedEnv.toLowerCase() === 'smartmobility') {
-            // smartmobility → 세기모빌리티 청구 금액
-            if (window.summarySegiTotalUSD !== undefined) {
-                displayUSD = window.summarySegiTotalUSD;
+            // smartmobility → 세기모빌리티 청구 금액 (세기 파일 총액 + M1)
+            if (window.summarySegiChargeUSD !== undefined) {
+                displayUSD = window.summarySegiChargeUSD;
                 const rate = parseFloat(document.getElementById('exchangeRate').value) || 0;
                 displayKRW = displayUSD * rate;
                 labelPrefix = '📤 세기모빌리티 청구 금액: ';
@@ -1586,9 +1599,22 @@ function updateSortIcons(serviceId, activeField, order) {
 function displayDataTable(data) {
     const container = document.getElementById('dataTable');
     
+    // Custom Charge 가상 데이터 처리를 위한 변수들 먼저 확인
+    const selectedEnv = getSelectedEnvironment();
+    const selectedServices = getSelectedServices();
+    const isServiceFiltered = selectedServices.length > 0;
+    const isCustomChargeSelected = selectedServices.some(s => s.toLowerCase().includes('custom charge'));
+    const isSmartmobilityEnv = selectedEnv.toLowerCase() === 'smartmobility';
+    const hasM1Amount = window.summaryM1Amount !== undefined && window.summaryM1Amount > 0;
+    
+    // Custom Charge만 선택된 경우 빈 데이터여도 가상 데이터 표시
     if (data.length === 0) {
-        container.innerHTML = '<p style="text-align: center; padding: 40px;">데이터가 없습니다</p>';
-        return;
+        if (isSmartmobilityEnv && hasM1Amount && isCustomChargeSelected) {
+            // Custom Charge 가상 데이터로 계속 진행
+        } else {
+            container.innerHTML = '<p style="text-align: center; padding: 40px;">데이터가 없습니다</p>';
+            return;
+        }
     }
     
     // 서비스별로 그룹화
@@ -1600,6 +1626,28 @@ function displayDataTable(data) {
         }
         groupedByService[service].push(row);
     });
+    
+    // smartmobility 환경 필터 시 Custom Charge(M1)가 없으면 가상으로 추가
+    // 서비스 필터가 없거나, Custom Charge가 선택된 경우에만 추가
+    // (isServiceFiltered, isCustomChargeSelected는 위에서 이미 선언됨)
+    
+    if (isSmartmobilityEnv && 
+        window.summaryM1Amount !== undefined && window.summaryM1Amount > 0 &&
+        (!isServiceFiltered || isCustomChargeSelected)) {  // 서비스 필터 없거나 Custom Charge 선택됨
+        const hasCustomCharge = Object.keys(groupedByService).some(s => s.toLowerCase().includes('custom charge'));
+        if (!hasCustomCharge) {
+            // Custom Charge 가상 데이터 추가
+            const rate = parseFloat(document.getElementById('exchangeRate').value) || 0;
+            groupedByService['Custom Charge'] = [{
+                service_name: 'Custom Charge',
+                description: 'MSP Fee (M1)',
+                cost: window.summaryM1Amount,
+                cost_krw: window.summaryM1Amount * rate,
+                environment: 'smartmobility',
+                date: window.summaryCielDateRange ? window.summaryCielDateRange.start : ''
+            }];
+        }
+    }
     
     let html = '<div style="display: flex; flex-direction: column; gap: 15px;">';
     
@@ -1618,8 +1666,25 @@ function displayDataTable(data) {
     sortedServices.forEach((service, index) => {
         const rows = groupedByService[service];
         const rowsWithCost = rows.filter(r => (parseFloat(r.cost) || 0) > 0);
-        const totalUSD = rows.reduce((sum, r) => sum + (parseFloat(r.cost) || 0), 0);
-        const totalKRW = rows.reduce((sum, r) => sum + (parseFloat(r.cost_krw) || 0), 0);
+        let totalUSD = rows.reduce((sum, r) => sum + (parseFloat(r.cost) || 0), 0);
+        let totalKRW = rows.reduce((sum, r) => sum + (parseFloat(r.cost_krw) || 0), 0);
+        
+        // cielmobility 환경 필터 시 Custom Charge는 M2-M1로 계산
+        // smartmobility 환경 필터 시 Custom Charge는 M1로 계산
+        const isCustomCharge = service.toLowerCase().includes('custom charge');
+        if (isCustomCharge) {
+            if (selectedEnv.toLowerCase() === 'cielmobility' && window.summaryCielMspAmount !== undefined) {
+                // cielmobility: M2-M1
+                totalUSD = window.summaryCielMspAmount;
+                const rate = parseFloat(document.getElementById('exchangeRate').value) || 0;
+                totalKRW = totalUSD * rate;
+            } else if (selectedEnv.toLowerCase() === 'smartmobility' && window.summaryM1Amount !== undefined) {
+                // smartmobility: M1
+                totalUSD = window.summaryM1Amount;
+                const rate = parseFloat(document.getElementById('exchangeRate').value) || 0;
+                totalKRW = totalUSD * rate;
+            }
+        }
         
         const serviceId = `service-${index}`;
         
@@ -1763,6 +1828,9 @@ function displayPagination(pagination) {
 
 // 필터 업데이트
 function updateFilters(data) {
+    // 전체 데이터 캐시 저장 (환경별 서비스 필터링용)
+    allDataCache = data;
+    
     const services = [...new Set(data.map(r => r.service_name).filter(s => s))].sort();
     const environments = [...new Set(data.map(r => r.environment).filter(e => e))].sort();
     
@@ -1830,6 +1898,62 @@ function toggleEnvironmentDropdown() {
 function selectEnvironment(value, text) {
     document.getElementById('environmentDropdownText').textContent = text;
     document.getElementById('environmentDropdownContent').classList.remove('show');
+    
+    // 선택된 환경에 따라 서비스 목록 필터링
+    updateServiceListByEnvironment(value);
+}
+
+// 환경에 따른 서비스 목록 업데이트
+function updateServiceListByEnvironment(selectedEnv) {
+    if (!allDataCache) return;
+    
+    const serviceCheckboxList = document.getElementById('serviceCheckboxList');
+    if (!serviceCheckboxList) return;
+    
+    // 현재 선택된 서비스들 저장
+    const currentlySelected = getSelectedServices();
+    
+    // 환경에 해당하는 데이터 필터링
+    let filteredData = allDataCache;
+    if (selectedEnv) {
+        filteredData = allDataCache.filter(r => r.environment === selectedEnv);
+    }
+    
+    // 해당 환경의 서비스 목록 추출 (비용이 0보다 큰 것만)
+    const servicesWithCost = {};
+    filteredData.forEach(r => {
+        if (r.service_name && r.cost > 0) {
+            servicesWithCost[r.service_name] = true;
+        }
+    });
+    
+    // smartmobility 환경일 때 Custom Charge 추가 (가상 데이터이므로 수동 추가)
+    if (selectedEnv && selectedEnv.toLowerCase() === 'smartmobility' && 
+        window.summaryM1Amount !== undefined && window.summaryM1Amount > 0) {
+        servicesWithCost['Custom Charge'] = true;
+    }
+    
+    const services = Object.keys(servicesWithCost).sort();
+    
+    // 서비스 체크박스 다시 생성
+    serviceCheckboxList.innerHTML = '';
+    services.forEach(service => {
+        const label = document.createElement('label');
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.value = service;
+        checkbox.className = 'service-checkbox';
+        // 이전에 선택되어 있었고, 현재 환경에도 있는 서비스는 선택 유지
+        if (currentlySelected.includes(service)) {
+            checkbox.checked = true;
+        }
+        label.appendChild(checkbox);
+        label.appendChild(document.createTextNode(service));
+        serviceCheckboxList.appendChild(label);
+    });
+    
+    // 드롭다운 텍스트 업데이트
+    updateServiceDropdownText();
 }
 
 // 선택된 환경 가져오기
@@ -2282,6 +2406,7 @@ function saveAsHtml() {
             margin-bottom: 12px;
             border-bottom: 2px solid #2c3e50;
             padding-bottom: 8px;
+            position: relative;
         }
         .summary-grid {
             display: grid;
@@ -2347,7 +2472,57 @@ function saveAsHtml() {
             font-size: 0.85em;
             border-top: 1px solid #e9ecef;
         }
+        .tooltip-container {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+        }
+        .tooltip-container:hover .tooltip-text {
+            visibility: visible;
+            opacity: 1;
+        }
+        .tooltip-text {
+            visibility: hidden;
+            opacity: 0;
+            position: absolute;
+            right: 0;
+            top: 100%;
+            margin-top: 8px;
+            width: 320px;
+            background: #333;
+            color: #fff;
+            padding: 12px 15px;
+            border-radius: 8px;
+            font-size: 0.7em;
+            font-weight: normal;
+            line-height: 1.5;
+            z-index: 1000;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            transition: opacity 0.2s, visibility 0.2s;
+        }
     </style>
+    <script>
+        // 서비스 토글 함수
+        function toggleService(serviceId) {
+            const details = document.getElementById(serviceId);
+            // service-0 또는 date-0 형식 모두 지원
+            let iconId;
+            if (serviceId.startsWith('date-')) {
+                iconId = 'toggle-icon-' + serviceId.replace('date-', '');
+            } else {
+                iconId = serviceId.replace('service-', 'toggle-icon-');
+            }
+            const icon = document.getElementById(iconId);
+            
+            if (details.style.display === 'none') {
+                details.style.display = 'block';
+                if (icon) icon.textContent = '▼';
+            } else {
+                details.style.display = 'none';
+                if (icon) icon.textContent = '▶';
+            }
+        }
+    </script>
 </head>
 <body>
     <div class="container">
@@ -2357,7 +2532,7 @@ function saveAsHtml() {
         </div>
         <div class="content">
             <div class="section">
-                <h2 class="section-title">
+                <h2 class="section-title" style="display: flex; align-items: center; flex-wrap: wrap;">
                     📊 비용 요약
                     <span style="font-size: 11.7px; font-weight: normal; color: #495057; margin-left: 15px;">${dateRange}</span>
                     <span style="font-size: 11.7px; font-weight: normal; color: #6c757d; margin-left: 10px;">${exchangeRateInfo}</span>

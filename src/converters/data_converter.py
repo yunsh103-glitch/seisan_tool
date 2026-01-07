@@ -43,12 +43,9 @@ class DataConverter:
             # 태그 추출
             tags = self.parser.extract_tags_from_columns(row)
             
-            # environment 정규화 (파서에서 이미 처리되지만 이중 확인)
-            environment = tags.get('environment')
-            if not environment or (isinstance(environment, str) and environment.strip() == ''):
-                environment = 'cielmobility'
-            elif environment in ['dev-smartmobility', 'prd-smartmobility']:
-                environment = 'smartmobility'
+            # 파서에서 이미 정규화된 environment와 original_environment를 가져옴
+            environment = tags.get('environment', 'cielmobility')
+            original_environment = tags.get('original_environment', '')
             
             # Description에서 리전 정보 추출
             region = row.get('region') if not pd.isna(row.get('region')) else None
@@ -69,6 +66,7 @@ class DataConverter:
                 department=tags.get('department'),
                 project=tags.get('project'),
                 environment=environment,
+                original_environment=original_environment,  # 정규화 전 원본 환경값
                 cost_center=tags.get('cost_center'),
                 usage_type=row.get('usage_type') if not pd.isna(row.get('usage_type')) else None,
                 usage_amount=float(row.get('usage_amount', 0)) if not pd.isna(row.get('usage_amount')) else None,

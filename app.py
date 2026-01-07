@@ -130,22 +130,11 @@ def upload_file():
         
         print(f"[데이터 검사] 최종: {len(unique_data)}건 (중복 제거 비활성화됨)")
         
-        # 환경값 정규화 전 확인
-        env_before = set(item.environment for item in unique_data)
-        print(f"[DEBUG] 정규화 전 환경값들: {env_before}")
-        
-        # 환경값 정규화
-        for item in unique_data:
-            # environment가 없거나 빈 값이면 cielmobility로 설정
-            if not item.environment or (isinstance(item.environment, str) and item.environment.strip() == ''):
-                item.environment = 'cielmobility'
-            # dev-smartmobility, prd-smartmobility -> smartmobility
-            elif item.environment in ['dev-smartmobility', 'prd-smartmobility']:
-                item.environment = 'smartmobility'
-        
-        # 환경값 정규화 후 확인
-        env_after = set(item.environment for item in unique_data)
-        print(f"[DEBUG] 정규화 후 환경값들: {env_after}")
+        # 환경값 확인 (data_converter에서 이미 정규화됨)
+        env_values = set(item.environment for item in unique_data)
+        orig_env_values = set(item.original_environment for item in unique_data if item.original_environment)
+        print(f"[DEBUG] 환경값들: {env_values}")
+        print(f"[DEBUG] 원본 환경값들: {orig_env_values}")
         
         # upload_type에 따라 데이터 저장
         if upload_type == 'segi':
@@ -157,19 +146,29 @@ def upload_file():
         
         # 두 파일이 모두 있으면 합치기
         if ciel_data_list and segi_data_list:
-            # 두 데이터를 합침
-            all_combined = ciel_data_list + segi_data_list
+            # 씨엘 파일에서 smartmobility 환경 데이터를 제외
+            # (세기 파일의 smartmobility 데이터만 사용하여 중복 방지)
+            ciel_filtered = [item for item in ciel_data_list if item.environment != 'smartmobility']
+            print(f"[DEBUG] 씨엘 데이터에서 smartmobility 제외: {len(ciel_data_list)} -> {len(ciel_filtered)}건")
             
-            # 중복 제거
+            # 필터링된 씨엘 데이터 + 세기 데이터 합침
+            all_combined = ciel_filtered + segi_data_list
+            
+            # 각 파일 내 중복만 제거 (원본 환경값 기준)
             seen = set()
             combined_unique = []
-            for item in all_combined:
+            for idx, item in enumerate(all_combined):
+                # 원본 환경값 사용 (정규화 전 값)
+                original_env = getattr(item, 'original_environment', item.environment) or ''
+                # 출처 구분 (씨엘 필터링 데이터 vs 세기 데이터)
+                source = 'ciel' if idx < len(ciel_filtered) else 'segi'
                 key = (
                     str(item.date),
                     item.service_name,
                     item.description,
-                    item.environment,
-                    float(item.cost)
+                    original_env,  # 원본 환경값 사용
+                    float(item.cost),
+                    source  # 출처를 키에 포함
                 )
                 if key not in seen:
                     seen.add(key)

@@ -354,14 +354,19 @@ class CloudCheckerParser:
             elif f'user:{field}' in row.index:
                 tags[field] = row[f'user:{field}'] if not pd.isna(row[f'user:{field}']) else None
         
-        # Environment 정규화
+        # Environment 정규화 (원본 값 보존)
         env_value = tags.get('environment')
+        # 원본 환경 값을 별도로 저장
+        tags['original_environment'] = env_value if env_value else ''
+        
         if not env_value or (isinstance(env_value, str) and env_value.strip() == ''):
             # environment가 없거나 빈 값이면 cielmobility
             tags['environment'] = 'cielmobility'
+            tags['original_environment'] = ''
         elif env_value in ['dev-smartmobility', 'prd-smartmobility']:
             # dev-smartmobility, prd-smartmobility -> smartmobility
             tags['environment'] = 'smartmobility'
+            # original_environment는 원본 값 유지 (dev-smartmobility 또는 prd-smartmobility)
         
         # Environment에서 프로젝트명 추출 (예: prd-smartmobility -> smartmobility)
         if tags.get('environment'):

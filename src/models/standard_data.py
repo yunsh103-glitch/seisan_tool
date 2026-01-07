@@ -29,6 +29,7 @@ class StandardCostData(BaseModel):
     department: Optional[str] = Field(default=None, description="부서")
     project: Optional[str] = Field(default=None, description="프로젝트")
     environment: str = Field(default="cielmobility", description="환경 (dev/staging/prod)")
+    original_environment: Optional[str] = Field(default=None, description="정규화 전 원본 환경값")
     cost_center: Optional[str] = Field(default=None, description="코스트 센터")
     
     # 추가 메타데이터
