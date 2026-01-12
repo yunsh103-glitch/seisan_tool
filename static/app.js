@@ -2500,8 +2500,55 @@ function saveAsHtml() {
             box-shadow: 0 4px 12px rgba(0,0,0,0.2);
             transition: opacity 0.2s, visibility 0.2s;
         }
+        /* 맨 위로 가기 버튼 */
+        .scroll-to-top {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            width: 50px;
+            height: 50px;
+            background: #4a5568;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            cursor: pointer;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            transition: all 0.3s ease;
+            z-index: 9999;
+        }
+        .scroll-to-top:hover {
+            background: #2d3748;
+            transform: translateY(-3px);
+            box-shadow: 0 6px 16px rgba(0,0,0,0.4);
+        }
+        .scroll-to-top svg {
+            width: 24px;
+            height: 24px;
+            fill: white;
+        }
     </style>
     <script>
+        // 맨 위로 가기 버튼 기능
+        window.addEventListener('scroll', function() {
+            const scrollBtn = document.getElementById('scrollToTop');
+            if (window.scrollY > 300) {
+                scrollBtn.style.display = 'flex';
+            } else {
+                scrollBtn.style.display = 'none';
+            }
+        });
+        
+        function scrollToTop() {
+            window.scrollTo({
+                top: 0,
+                behavior: 'smooth'
+            });
+        }
+        
         // 서비스 토글 함수
         function toggleService(serviceId) {
             const details = document.getElementById(serviceId);
@@ -2559,6 +2606,12 @@ function saveAsHtml() {
             생성일: ${new Date().toLocaleString('ko-KR')} | AWS 비용 정산 툴
         </div>
     </div>
+    <!-- 맨 위로 가기 버튼 -->
+    <button id="scrollToTop" class="scroll-to-top" onclick="scrollToTop()" title="맨 위로">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path d="M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6z"/>
+        </svg>
+    </button>
 </body>
 </html>`;
     

@@ -14,7 +14,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 class KoreaEximAPI:
     """한국수출입은행 환율 API 클라이언트"""
     
-    BASE_URL = "https://www.koreaexim.go.kr/site/program/financial/exchangeJSON"
+    BASE_URL = "https://oapi.koreaexim.go.kr/site/program/financial/exchangeJSON"
     
     def __init__(self, api_key: Optional[str] = None):
         """
