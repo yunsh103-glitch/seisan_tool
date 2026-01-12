@@ -374,6 +374,12 @@ function displaySingleSummary(type, summary) {
         `;
     }
     
+    // 설명문 표시
+    const disclaimer = document.getElementById('summaryDisclaimer');
+    if (disclaimer) {
+        disclaimer.style.display = 'block';
+    }
+    
     // 일별 비용 데이터 저장
     dailyCostsData = summary.daily_costs;
     dailyCostsByEnvData = summary.daily_costs_by_env;
@@ -471,7 +477,7 @@ function displayCombinedSummary() {
                 <span id="cielKrwValue" style="color: #6c757d;">-</span>
             </div>
             <div style="font-size: 0.85em; color: #6c757d; margin-top: 8px; padding-top: 8px; border-top: 1px dashed #cbd5e0;">
-                (M2=AWS 사용료*20%, $${m2Amount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} / <span id="m2KrwValue">-</span>)
+                M2=AWS 사용료*20% <br> $${m2Amount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} / <span id="m2KrwValue">-</span>
             </div>
         </div>
         <div class="summary-card" style="background: #F2F4FF;">
@@ -491,7 +497,7 @@ function displayCombinedSummary() {
                 <span id="segiKrwValue">-</span>
             </div>
             <div style="font-size: 0.85em; color: #6c757d; margin-top: 8px; padding-top: 8px; border-top: 1px dashed #f5a5a5;">
-                (M1=AWS 사용료가 $20,000 미만=$1,000(5%에 해당), $${m1Amount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} / <span id="m1KrwValue">-</span>)
+                M1=AWS 사용료가 $20,000 미만=$1,000(5%에 해당) <br> $${m1Amount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} / <span id="m1KrwValue">-</span>
             </div>
         </div>
         <div class="summary-card" style="background: #F8F9FA;">
@@ -502,10 +508,16 @@ function displayCombinedSummary() {
                 <span id="cielUsageKrwValue" style="color: #6c757d;">-</span>
             </div>
             <div style="font-size: 0.85em; color: #6c757d; margin-top: 8px; padding-top: 8px; border-top: 1px dashed #cbd5e0;">
-                (M2-M1, $${cielMspAmount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} / <span id="cielMspKrwValue">-</span>)
+                M2-M1 차액 <br> $${cielMspAmount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} / <span id="cielMspKrwValue">-</span>
             </div>
         </div>
     `;
+    
+    // 설명문 표시
+    const disclaimer = document.getElementById('summaryDisclaimer');
+    if (disclaimer) {
+        disclaimer.style.display = 'block';
+    }
     
     // 일별 비용 데이터 저장 (두 파일의 환경별 데이터를 합침)
     // 씨엘모빌리티 데이터의 환경별 비용
@@ -2585,6 +2597,9 @@ function saveAsHtml() {
                     <span style="font-size: 11.7px; font-weight: normal; color: #6c757d; margin-left: 10px;">${exchangeRateInfo}</span>
                 </h2>
                 ${summaryHtml}
+                <div style="font-size: 0.85em; color: #6c757d; margin-top: 12px; padding-top: 8px; text-align: right;">
+                    ＊클라우드체커 csv파일 기준으로 작성되어, 일부 소수점 값이 상이할 수 있음
+                </div>
             </div>
             ${chartImage ? `
             <div class="section chart-section">
