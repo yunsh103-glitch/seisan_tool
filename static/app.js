@@ -2329,15 +2329,15 @@ function saveAsHtml() {
     // (USD / KRW) 텍스트 제거
     summaryHtml = summaryHtml.replace(/\s*\(USD\s*\/\s*KRW\)/gi, '');
     
-    // 차트를 이미지로 변환
-    const dailyTrendChart = document.getElementById('dailyTrendChart');
-    let chartImage = '';
+    // 차트 데이터 추출 (interactive 차트를 위해)
+    let chartData = null;
+    let chartConfig = null;
     if (dailyTrendChart) {
-        try {
-            chartImage = dailyTrendChart.toDataURL('image/png');
-        } catch (e) {
-            console.error('차트 이미지 변환 실패:', e);
-        }
+        chartData = dailyTrendChart.data;
+        chartConfig = {
+            options: dailyTrendChart.options,
+            type: dailyTrendChart.config.type
+        };
     }
     
     // 상세 데이터 복사
@@ -2443,13 +2443,15 @@ function saveAsHtml() {
             flex-wrap: wrap;
         }
         .chart-section {
-            text-align: center;
             margin-top: 20px;
         }
-        .chart-section img {
+        .chart-section .chart-container {
+            position: relative;
+            height: 300px;
+            margin: 0 auto;
+        }
+        .chart-section canvas {
             max-width: 100%;
-            height: auto;
-            border-radius: 8px;
         }
         .data-section table {
             width: 100%;
@@ -2543,7 +2545,35 @@ function saveAsHtml() {
             fill: white;
         }
     </style>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script>
+        // 차트 데이터 및 설정
+        const chartData = ${chartData ? JSON.stringify(chartData) : 'null'};
+        const chartConfig = ${chartConfig ? JSON.stringify(chartConfig) : 'null'};
+        
+        // 페이지 로드 후 차트 그리기
+        window.addEventListener('DOMContentLoaded', function() {
+            if (chartData && chartConfig) {
+                const ctx = document.getElementById('dailyTrendChart');
+                if (ctx) {
+                    // Y축 틱 콜백 함수 복원
+                    if (chartConfig.options && chartConfig.options.scales && chartConfig.options.scales.y) {
+                        chartConfig.options.scales.y.ticks = {
+                            callback: function(value) {
+                                return '$' + value.toLocaleString();
+                            }
+                        };
+                    }
+                    
+                    new Chart(ctx, {
+                        type: chartConfig.type,
+                        data: chartData,
+                        options: chartConfig.options
+                    });
+                }
+            }
+        });
+        
         // 맨 위로 가기 버튼 기능
         window.addEventListener('scroll', function() {
             const scrollBtn = document.getElementById('scrollToTop');
@@ -2601,10 +2631,12 @@ function saveAsHtml() {
                     ＊클라우드체커 csv파일 기준으로 작성되어, 일부 소수점 값이 상이할 수 있음
                 </div>
             </div>
-            ${chartImage ? `
+            ${chartData ? `
             <div class="section chart-section">
                 <h2 class="section-title">📊 일별 비용 추이</h2>
-                <img src="${chartImage}" alt="일별 비용 추이 차트">
+                <div class="chart-container">
+                    <canvas id="dailyTrendChart"></canvas>
+                </div>
             </div>
             ` : ''}
             ${dataTableHtml ? `
