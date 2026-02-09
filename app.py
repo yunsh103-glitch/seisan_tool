@@ -14,8 +14,8 @@ from src.converters.currency_converter_integration import CostDataConverterWithC
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
-app.config['SECRET_KEY'] = 'your-secret-key-here'  # 실제 운영시 변경 필요
-app.config['KOREA_EXIM_API_KEY'] = 'K7Ns1BMF9j5ZZN9daJAMjMqlTbWTJlg6'  # 한국수출입은행 API 키
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-here')  # 환경 변수에서 읽기
+app.config['KOREA_EXIM_API_KEY'] = os.environ.get('KOREA_EXIM_API_KEY', 'K7Ns1BMF9j5ZZN9daJAMjMqlTbWTJlg6')  # 한국수출입은행 API 키
 
 # 업로드 폴더 생성
 Path(app.config['UPLOAD_FOLDER']).mkdir(parents=True, exist_ok=True)
