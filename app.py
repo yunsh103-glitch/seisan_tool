@@ -7,9 +7,17 @@ import os
 from datetime import date, datetime
 import pandas as pd
 from pathlib import Path
+import logging
 
 from src.cost_data_converter import CostDataConverter
 from src.converters.currency_converter_integration import CostDataConverterWithCurrency
+
+# 로깅 설정
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
@@ -340,9 +348,12 @@ def fetch_exchange_rate():
             # 한국수출입은행 API 사용
             api_key = app.config.get('KOREA_EXIM_API_KEY', '')
             
-            print(f"[환율 조회] API 키 설정 여부: {bool(api_key)}")
+            logger.info(f"환율 조회 요청: 날짜={target_date}, API 소스=koreaexim")
+            logger.info(f"API 키 설정 여부: {bool(api_key)}, 키 길이: {len(api_key) if api_key else 0}")
+            logger.debug(f"API 키 앞 10자: {api_key[:10] if api_key else 'None'}...")
             
             if not api_key:
+                logger.error("API 키가 설정되지 않았습니다")
                 return jsonify({'error': 'API 키가 설정되지 않았습니다'}), 400
             
             from src.exchange.api_client import KoreaEximAPI
@@ -350,24 +361,27 @@ def fetch_exchange_rate():
             api_client = KoreaEximAPI(api_key)
             
             try:
-                print(f"[환율 조회] API 요청 시작: {rate_date}")
+                logger.info(f"API 요청 시작: {rate_date}")
                 exchange_rate = api_client.get_exchange_rates(rate_date, 'USD')
-                print(f"[환율 조회] API 응답: {exchange_rate}")
+                logger.info(f"API 응답 성공: {exchange_rate}")
             except ConnectionError as e:
-                print(f"[환율 조회] 연결 오류: {str(e)}")
-                return jsonify({'error': f'API 서버 연결 실패: {str(e)}. 네트워크 연결을 확인하거나 잠시 후 다시 시도해주세요.'}), 503
-            except Exception as e:
-                print(f"[환율 조회] 예외 발생: {str(e)}")
+                logger.error(f"연결 오류 발생: {str(e)}", exc_info=True)
+                return jsonify({'error': f'API 서버 연결 실패: {str(e)}'}), 503
+            except ValueError as e:
+                logger.error(f"값 오류 발생: {str(e)}", exc_info=True)
                 return jsonify({'error': f'API 오류: {str(e)}'}), 500
+            except Exception as e:
+                logger.error(f"예상치 못한 오류 발생: {str(e)}", exc_info=True)
+                return jsonify({'error': f'예상치 못한 오류: {str(e)}'}), 500
             
             if not exchange_rate:
-                print(f"[환율 조회] 환율 정보 없음: {rate_date}")
+                logger.warning(f"환율 정보 없음: {rate_date}")
                 return jsonify({'error': f'해당 날짜({target_date})의 환율 정보를 찾을 수 없습니다. 주말이나 공휴일일 수 있습니다.'}), 404
             
             # 환율 저장
             converter.currency_converter.rate_manager.save_rate(exchange_rate)
             
-            print(f"[환율 조회] 성공: {exchange_rate.rate} KRW/USD")
+            logger.info(f"환율 조회 성공: {exchange_rate.rate} KRW/USD")
             
             return jsonify({
                 'success': True,

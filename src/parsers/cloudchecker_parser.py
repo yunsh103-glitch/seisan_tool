@@ -240,7 +240,6 @@ class CloudCheckerParser:
         ]
         if any(keyword in date_str.lower() for keyword in invalid_keywords):
             return None
-        
         # 날짜 형식 패턴 체크 (숫자와 구분자만 있어야 함)
         if not re.match(r'^[\d\-/\s:]+$', date_str):
             return None

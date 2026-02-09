@@ -2,13 +2,12 @@
 한국수출입은행 환율 API 클라이언트
 """
 import requests
-import urllib3
 from datetime import datetime, date
 from typing import Optional, List, Dict
 from src.models.exchange_rate import ExchangeRate
+import logging
 
-# SSL 경고 무시
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+logger = logging.getLogger(__name__)
 
 
 class KoreaEximAPI:
@@ -54,11 +53,16 @@ class KoreaEximAPI:
             "data": "AP01"  # 환율 데이터
         }
         
+        logger.info(f"환율 API 요청: {date_str}, 통화: {currency_code}")
+        logger.debug(f"API URL: {self.BASE_URL}?authkey=***&searchdate={date_str}&data=AP01")
+        
         try:
-            response = requests.get(self.BASE_URL, params=params, timeout=30, verify=False)
+            response = requests.get(self.BASE_URL, params=params, timeout=10)
+            logger.info(f"API 응답 상태 코드: {response.status_code}")
             response.raise_for_status()
             
             data = response.json()
+            logger.debug(f"API 응답 데이터 타입: {type(data)}, 길이: {len(data) if isinstance(data, list) else 'N/A'}")
             
             # 오류 응답 체크
             if isinstance(data, dict) and "error" in data:
@@ -84,9 +88,20 @@ class KoreaEximAPI:
             # 해당 통화를 찾지 못함
             return None
         
+        except requests.Timeout as e:
+            logger.error(f"API 타임아웃: {str(e)}")
+            raise ConnectionError(f"API 서버 응답 시간 초과: {str(e)}")
+        except requests.ConnectionError as e:
+            logger.error(f"API 연결 오류: {str(e)}")
+            raise ConnectionError(f"API 서버 연결 실패: {str(e)}")
+        except requests.HTTPError as e:
+            logger.error(f"API HTTP 오류: {str(e)}, 응답: {response.text if 'response' in locals() else 'N/A'}")
+            raise ConnectionError(f"API 서버 오류 (HTTP {response.status_code}): {str(e)}")
         except requests.RequestException as e:
+            logger.error(f"API 요청 실패: {str(e)}")
             raise ConnectionError(f"API 요청 실패: {str(e)}")
         except (ValueError, KeyError) as e:
+            logger.error(f"API 응답 파싱 실패: {str(e)}")
             raise ValueError(f"API 응답 파싱 실패: {str(e)}")
     
     def get_all_exchange_rates(self, search_date: Optional[date] = None) -> List[ExchangeRate]:
