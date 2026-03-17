@@ -5,6 +5,7 @@ from flask import Flask, render_template, request, jsonify, send_file
 from werkzeug.utils import secure_filename
 import os
 from datetime import date, datetime
+from collections import Counter
 import pandas as pd
 from pathlib import Path
 import logging
@@ -45,22 +46,22 @@ def calculate_msp_costs(non_custom_charge_usd):
     MSP 비용 계산
     
     - cielmobility 환경에서 Custom Charge를 제외한 금액 기준
-    - $20,000 미만: M2 = 20%, M1 = $1,000
+    - $20,000 미만: M2 = $2,000 (고정), M1 = $1,000 (고정)
     - $20,000 이상: M2 = 20%, M1 = 5%
     - 씨엘모빌리티 사용 MSP = M2 - M1
     """
     THRESHOLD = 20000.0
     M2_RATE = 0.20  # 20%
+    M2_FIXED = 2000.0  # $2,000
     M1_FIXED = 1000.0  # $1,000
     M1_RATE = 0.05  # 5%
     
-    # M2: 항상 20%
-    msp_invoice_amount = non_custom_charge_usd * M2_RATE
-    
-    # M1: 임계값에 따라 결정
+    # M2, M1: 임계값에 따라 결정
     if non_custom_charge_usd < THRESHOLD:
+        msp_invoice_amount = M2_FIXED
         msp_segi_amount = M1_FIXED
     else:
+        msp_invoice_amount = non_custom_charge_usd * M2_RATE
         msp_segi_amount = non_custom_charge_usd * M1_RATE
     
     # 씨엘모빌리티 사용 MSP = M2 - M1
@@ -155,9 +156,35 @@ def upload_file():
         # 두 파일이 모두 있으면 합치기
         if ciel_data_list and segi_data_list:
             # 씨엘 파일에서 smartmobility 환경 데이터를 제외
-            # (세기 파일의 smartmobility 데이터만 사용하여 중복 방지)
-            ciel_filtered = [item for item in ciel_data_list if item.environment != 'smartmobility']
-            print(f"[DEBUG] 씨엘 데이터에서 smartmobility 제외: {len(ciel_data_list)} -> {len(ciel_filtered)}건")
+            # 방법 1: env 태그가 smartmobility인 레코드 제외 (env 태그가 있는 경우)
+            # 방법 2: 세기 파일과 동일한 레코드 제외 (씨엘 파일이 전체 청구서인 경우 - env 태그 없음)
+            segi_key_counter = Counter()
+            for item in segi_data_list:
+                key = (
+                    str(item.date)[:10],
+                    item.service_name,
+                    item.description,
+                    round(float(item.cost), 2)
+                )
+                segi_key_counter[key] += 1
+
+            remaining_segi = dict(segi_key_counter)
+            ciel_filtered = []
+            for item in ciel_data_list:
+                if item.environment == 'smartmobility':
+                    continue  # env 태그로 명시된 smartmobility 제외
+                match_key = (
+                    str(item.date)[:10],
+                    item.service_name,
+                    item.description,
+                    round(float(item.cost), 2)
+                )
+                if remaining_segi.get(match_key, 0) > 0:
+                    remaining_segi[match_key] -= 1
+                    continue  # 세기 파일과 동일한 레코드이므로 제외 (cielmobility는 순수 씨엘 비용만)
+                ciel_filtered.append(item)
+
+            print(f"[DEBUG] 씨엘 데이터에서 smartmobility/세기 중복 제외: {len(ciel_data_list)} -> {len(ciel_filtered)}건")
             
             # 필터링된 씨엘 데이터 + 세기 데이터 합침
             all_combined = ciel_filtered + segi_data_list

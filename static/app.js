@@ -477,7 +477,7 @@ function displayCombinedSummary() {
                 <span id="cielKrwValue" style="color: #6c757d;">-</span>
             </div>
             <div style="font-size: 0.85em; color: #6c757d; margin-top: 8px; padding-top: 8px; border-top: 1px dashed #cbd5e0;">
-                M2=AWS 사용료*20% <br> $${m2Amount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} / <span id="m2KrwValue">-</span>
+                M2=$20,000미만=$2,000고정 / $20,000이상=사용료*20% <br> $${m2Amount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} / <span id="m2KrwValue">-</span>
             </div>
         </div>
         <div class="summary-card" style="background: #F2F4FF;">
@@ -497,7 +497,7 @@ function displayCombinedSummary() {
                 <span id="segiKrwValue">-</span>
             </div>
             <div style="font-size: 0.85em; color: #6c757d; margin-top: 8px; padding-top: 8px; border-top: 1px dashed #f5a5a5;">
-                M1=AWS 사용료가 $20,000 미만=$1,000(5%에 해당) <br> $${m1Amount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} / <span id="m1KrwValue">-</span>
+                M1=$20,000미만=$1,000고정 / $20,000이상=사용료*5% <br> $${m1Amount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} / <span id="m1KrwValue">-</span>
             </div>
         </div>
         <div class="summary-card" style="background: #F8F9FA;">
