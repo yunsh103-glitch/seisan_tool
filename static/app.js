@@ -477,7 +477,7 @@ function displayCombinedSummary() {
                 <span id="cielKrwValue" style="color: #6c757d;">-</span>
             </div>
             <div style="font-size: 0.85em; color: #6c757d; margin-top: 8px; padding-top: 8px; border-top: 1px dashed #cbd5e0;">
-                M2=$20,000미만=$2,000고정 / $20,000이상=사용료*20% <br> $${m2Amount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} / <span id="m2KrwValue">-</span>
+                M2=CSV Custom Charge≥$2,000이면 그 값 / 미만이면 $2,000고정(사용료<$20,000) 또는 사용료*20% <br> $${m2Amount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} / <span id="m2KrwValue">-</span>
             </div>
         </div>
         <div class="summary-card" style="background: #F2F4FF;">

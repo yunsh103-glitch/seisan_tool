@@ -41,35 +41,44 @@ combined_data_list = None  # 합쳐진 데이터
 combined_df = None  # 합쳐진 DataFrame
 
 
-def calculate_msp_costs(non_custom_charge_usd):
+def calculate_msp_costs(non_custom_charge_usd, custom_charge_usd=0.0):
     """
     MSP 비용 계산
-    
-    - cielmobility 환경에서 Custom Charge를 제외한 금액 기준
-    - $20,000 미만: M2 = $2,000 (고정), M1 = $1,000 (고정)
-    - $20,000 이상: M2 = 20%, M1 = 5%
-    - 씨엘모빌리티 사용 MSP = M2 - M1
+
+    우선순위 1 - CSV에 실제 Custom Charge가 $2,000 이상인 경우:
+      - M2 = CSV Custom Charge 값 그대로
+      - M1 = $1,000 (고정, segimobility 청구)
+      - cielmobility Custom Charge = M2 - M1
+
+    우선순위 2 - CSV Custom Charge가 없거나 $2,000 미만인 경우 (AWS 사용료 기준 계산):
+      - $20,000 미만: M2 = $2,000 (고정), M1 = $1,000 (고정)
+      - $20,000 이상: M2 = 사용료 * 20%, M1 = 사용료 * 5%
     """
     THRESHOLD = 20000.0
-    M2_RATE = 0.20  # 20%
-    M2_FIXED = 2000.0  # $2,000
-    M1_FIXED = 1000.0  # $1,000
-    M1_RATE = 0.05  # 5%
-    
-    # M2, M1: 임계값에 따라 결정
-    if non_custom_charge_usd < THRESHOLD:
-        msp_invoice_amount = M2_FIXED
+    M2_RATE = 0.20
+    M2_FIXED = 2000.0
+    M1_FIXED = 1000.0
+    M1_RATE = 0.05
+    CSV_CUSTOM_CHARGE_THRESHOLD = 2000.0
+
+    if custom_charge_usd >= CSV_CUSTOM_CHARGE_THRESHOLD:
+        # CSV에 실제 Custom Charge가 있는 경우: 그 값을 그대로 M2로 사용
+        msp_invoice_amount = custom_charge_usd
         msp_segi_amount = M1_FIXED
-    else:
+    elif non_custom_charge_usd >= THRESHOLD:
         msp_invoice_amount = non_custom_charge_usd * M2_RATE
         msp_segi_amount = non_custom_charge_usd * M1_RATE
-    
+    else:
+        msp_invoice_amount = M2_FIXED
+        msp_segi_amount = M1_FIXED
+
     # 씨엘모빌리티 사용 MSP = M2 - M1
     msp_ciel_usage = msp_invoice_amount - msp_segi_amount
-    
+
     return {
         'threshold': THRESHOLD,
         'is_over_threshold': non_custom_charge_usd >= THRESHOLD,
+        'has_csv_custom_charge': custom_charge_usd >= CSV_CUSTOM_CHARGE_THRESHOLD,
         'msp_invoice_amount': round(msp_invoice_amount, 2),  # M2: 세금계산서 발행 MSP
         'msp_segi_amount': round(msp_segi_amount, 2),  # M1: 세기모빌리티 MSP
         'msp_ciel_usage': round(msp_ciel_usage, 2)  # 씨엘모빌리티 사용 MSP
@@ -286,7 +295,7 @@ def upload_file():
                     non_custom_charge_usd += cost
         
         # MSP 비용 계산 (cielmobility 환경 기준)
-        msp_info = calculate_msp_costs(non_custom_charge_usd)
+        msp_info = calculate_msp_costs(non_custom_charge_usd, custom_charge_usd)
         
         return jsonify({
             'success': True,
@@ -603,7 +612,7 @@ def get_summary():
                 else:
                     non_custom_charge_usd += cost
         
-        msp_info = calculate_msp_costs(non_custom_charge_usd)
+        msp_info = calculate_msp_costs(non_custom_charge_usd, custom_charge_usd)
         msp_info['custom_charge_usd'] = round(custom_charge_usd, 2)
         msp_info['non_custom_charge_usd'] = round(non_custom_charge_usd, 2)
         
